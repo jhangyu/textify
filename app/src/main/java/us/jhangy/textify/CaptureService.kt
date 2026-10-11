@@ -1,5 +1,6 @@
 package us.jhangy.textify
 
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -7,41 +8,35 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ServiceInfo
-import android.graphics.Bitmap
-import android.graphics.PixelFormat
-import android.hardware.display.DisplayManager
-import android.hardware.display.VirtualDisplay
-import android.media.ImageReader
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
-import android.util.DisplayMetrics
-import android.view.Gravity
-import android.view.LayoutInflater
-import android.view.WindowManager
-import android.widget.ImageView
-import android.widget.Toast
 import androidx.core.app.NotificationCompat
 
 /**
- * Foreground service that owns the MediaProjection session and shows a draggable
- * floating bubble. A tap on the bubble grabs one screen frame, runs OCR, and
- * hands the text to ResultActivity. Vendor-independent: overlay + MediaProjection
- * + ML Kit, nothing platform-specific.
+ * Foreground service that owns the MediaProjection, one long-lived capture pipeline
+ * ([ScreenGrabber]) and the floating [Bubble]. A bubble tap fades the bubble out, grabs the
+ * next frame and opens [SessionActivity]; the bubble fades back in on [onSessionEnded].
+ * Dragging the bubble onto the bottom target stops the service.
  */
 class CaptureService : Service() {
 
     private val main = Handler(Looper.getMainLooper())
-    private lateinit var wm: WindowManager
-    private var bubble: ImageView? = null
     private var projection: MediaProjection? = null
+    private var grabber: ScreenGrabber? = null
+    private var bubble: Bubble? = null
+    private var busy = false   // true from bubble tap until the session ends (or the grab fails)
 
     private val projectionCallback = object : MediaProjection.Callback() {
         override fun onStop() { stopSelf() }
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        instance = this
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -54,8 +49,10 @@ class CaptureService : Service() {
         // On Android 14+ the FGS (type mediaProjection) must be running before
         // getMediaProjection() is called.
         startForeground(NOTIF_ID, buildNotification())
+        if (projection != null) return START_NOT_STICKY   // already running: keep the current session
 
         val code = intent?.getIntExtra(EXTRA_CODE, 0) ?: 0
+        @Suppress("DEPRECATION")
         val data = intent?.getParcelableExtra<Intent>(EXTRA_DATA)
         if (code == 0 || data == null) {
             stopSelf(); return START_NOT_STICKY
@@ -63,102 +60,38 @@ class CaptureService : Service() {
         val mpm = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         val proj = mpm.getMediaProjection(code, data)
         if (proj == null) { stopSelf(); return START_NOT_STICKY }
+        // Must precede the VirtualDisplay creation inside ScreenGrabber, else IllegalStateException.
         proj.registerCallback(projectionCallback, main)
         projection = proj
-        showBubble()
-        return START_STICKY
-    }
-
-    private fun showBubble() {
-        wm = getSystemService(WINDOW_SERVICE) as WindowManager
-        val view = LayoutInflater.from(this).inflate(R.layout.bubble, null) as ImageView
-        val lp = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            x = 24; y = 240
+        grabber = runCatching { ScreenGrabber(this, proj, main) }.getOrElse {
+            stopSelf(); return START_NOT_STICKY
         }
-
-        // drag to move; tap (no drag) to capture
-        var downX = 0f; var downY = 0f; var startX = 0; var startY = 0; var moved = false
-        view.setOnTouchListener { v, e ->
-            when (e.actionMasked) {
-                android.view.MotionEvent.ACTION_DOWN -> {
-                    downX = e.rawX; downY = e.rawY; startX = lp.x; startY = lp.y; moved = false; true
-                }
-                android.view.MotionEvent.ACTION_MOVE -> {
-                    val dx = (e.rawX - downX).toInt(); val dy = (e.rawY - downY).toInt()
-                    if (kotlin.math.abs(dx) > 12 || kotlin.math.abs(dy) > 12) moved = true
-                    lp.x = startX + dx; lp.y = startY + dy
-                    wm.updateViewLayout(v, lp); true
-                }
-                android.view.MotionEvent.ACTION_UP -> {
-                    if (!moved) { v.performClick() }
-                    true
-                }
-                else -> false
-            }
-        }
-        view.setOnClickListener { captureOnce() }
-        bubble = view
-        wm.addView(view, lp)
+        bubble = Bubble(this, onTap = { capture() }, onDismiss = { stopSelf() }).also { it.show() }
+        // A projection cannot be restored after a process restart, so never ask to be restarted.
+        return START_NOT_STICKY
     }
 
-    private fun captureOnce() {
-        val proj = projection ?: return
-        bubble?.visibility = android.view.View.GONE  // don't OCR our own bubble
-
-        val metrics = DisplayMetrics()
-        @Suppress("DEPRECATION")
-        (getSystemService(WINDOW_SERVICE) as WindowManager).defaultDisplay.getRealMetrics(metrics)
-        val w = metrics.widthPixels; val h = metrics.heightPixels; val dpi = metrics.densityDpi
-
-        val reader = ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 2)
-        var vd: VirtualDisplay? = null
-        vd = proj.createVirtualDisplay(
-            "textify-cap", w, h, dpi,
-            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-            reader.surface, null, main
-        )
-
-        reader.setOnImageAvailableListener({ r ->
-            val image = r.acquireLatestImage() ?: return@setOnImageAvailableListener
-            val bitmap = try {
-                val plane = image.planes[0]
-                val rowStride = plane.rowStride
-                val pixelStride = plane.pixelStride
-                val rowPadding = rowStride - pixelStride * w
-                val bmp = Bitmap.createBitmap(
-                    w + rowPadding / pixelStride, h, Bitmap.Config.ARGB_8888
-                )
-                bmp.copyPixelsFromBuffer(plane.buffer)
-                Bitmap.createBitmap(bmp, 0, 0, w, h)
-            } finally {
-                image.close()
-            }
-            // one-shot: tear down capture pipeline, keep projection for next tap
-            r.setOnImageAvailableListener(null, null)
-            vd?.release()
-            r.close()
-            runOcr(bitmap)
-        }, main)
-    }
-
-    private fun runOcr(bitmap: Bitmap) {
-        Ocr.recognize(this, bitmap, Prefs.script(this)) { text ->
-            main.post {
-                bubble?.visibility = android.view.View.VISIBLE
-                if (text.isNullOrBlank()) {
-                    Toast.makeText(this, R.string.no_text, Toast.LENGTH_SHORT).show()
+    private fun capture() {
+        if (busy) return
+        val g = grabber ?: return
+        val b = bubble ?: return
+        busy = true
+        b.fadeOut {
+            g.grab { shot ->
+                if (shot == null) {
+                    // spec: no frame -> bubble fades back, no toast; user retries
+                    busy = false
+                    b.fadeIn()
                 } else {
-                    ResultActivity.show(this, text)
+                    SessionActivity.start(this, shot)
                 }
             }
         }
+    }
+
+    private fun sessionEnded() {
+        busy = false
+        bubble?.fadeIn()
     }
 
     private fun buildNotification(): Notification {
@@ -181,8 +114,12 @@ class CaptureService : Service() {
     }
 
     override fun onDestroy() {
-        bubble?.let { runCatching { wm.removeView(it) } }
+        instance = null   // first: the finishing session's onSessionEnded() becomes a no-op
+        SessionActivity.finishActive()
+        bubble?.remove()
         bubble = null
+        grabber?.release()
+        grabber = null
         projection?.unregisterCallback(projectionCallback)
         projection?.stop()
         projection = null
@@ -195,6 +132,15 @@ class CaptureService : Service() {
         private const val EXTRA_CODE = "code"
         private const val EXTRA_DATA = "data"
         private const val ACTION_STOP = "us.jhangy.textify.STOP"
+
+        // Set in onCreate, cleared in onDestroy: never outlives the service.
+        @SuppressLint("StaticFieldLeak")
+        private var instance: CaptureService? = null
+
+        /** Called by SessionActivity (main thread) when its session finishes. No-op if the service is not running. */
+        fun onSessionEnded() {
+            instance?.sessionEnded()
+        }
 
         fun start(ctx: Context, code: Int, data: Intent) {
             val i = Intent(ctx, CaptureService::class.java)
