@@ -52,7 +52,6 @@ def main():
     name = re.search(r'versionName\s*=\s*"([^"]+)"', gradle).group(1)
     code = re.search(r"versionCode\s*=\s*(\d+)", gradle).group(1)
     print(f"APK: {APK}  ({APK.stat().st_size / 1e6:.1f} MB)  version {name} ({code})")
-    print("Release and debug builds use different keys: uninstall a debug build from the phone before installing this APK.")
 
 
 if __name__ == "__main__":
