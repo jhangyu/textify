@@ -196,6 +196,8 @@ class SettingsActivity : AppCompatActivity() {
   - Tap the last selected toggle → `toggle.reject()`; block capsule in: alpha 0→1, translationY −8dp→0, **msgIn 220** ease-out; resting text alpha →0 160 ms; auto-hide at msgIn + **blockHold 1500** with **msgOut 160** ease-in (alpha →0, translationY →−8dp), resting text back; scroll the capsule into view (`requestRectangleOnScreen`).
 
 ## 8. Shared visual components (new, one implementation each)
+Exact Kotlin signatures and XML child contracts: `docs/superpowers/plans/2026-10-11-settings-redesign-plan.md` §"Frozen interfaces (round 1)" and §"XML contracts". They supersede the code blocks in this section where they differ: `glowBitmap` gains `dyPx`; `MistBackground` takes `density`; new `CssGradientDrawable`, `Context.dpToPx`, `HaloStyle.page`; `HaloRecipe` gains `insetDp` (`PREVIEW_EDGE` = corner 19, inset 5: the centre line of a 10dp band inside a r24 box); `DemoSpec` fields differ (pulse is centred on the bubble, which is what the mockup offsets resolve to); `CaptureDemoView` is the stage box itself; children are found by `android:tag`; `LanguageToggleView.checked` is read-only with `setChecked(value, animate)`.
+
 ### 8.1 `EdgeGlowView` recipe generalisation
 Source: existing a2 implementation + [SF] mini halo JS + [P2] mini halo JS + [L3]/[SF] residual edge.
 ```kotlin
