@@ -25,7 +25,7 @@ object Prefs {
     }
 
     /** Translation target (translation spec §4); default 繁體中文. */
-    fun target(ctx: Context): TargetLang = TargetLang.of(prefs(ctx).getString(TARGET_KEY, null) ?: TargetLang.DEFAULT)
+    fun target(ctx: Context): TargetLang = TargetLang.of(prefs(ctx).getString(TARGET_KEY, null)?.takeIf(Translate::isTarget) ?: TargetLang.DEFAULT)
 
     fun setTarget(ctx: Context, key: String) {
         prefs(ctx).edit().putString(TARGET_KEY, key).apply()

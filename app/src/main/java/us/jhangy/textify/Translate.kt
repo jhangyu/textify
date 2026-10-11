@@ -39,11 +39,25 @@ object Translate {
     /** Every ML Kit translation language code. */
     fun languages(): List<String> = TranslateLanguage.getAllLanguages()
 
-    /** The active network is Wi-Fi (needs ACCESS_NETWORK_STATE). */
+    /** [key] is a stored target key Prefs may hand to [TargetLang.of]. */
+    fun isTarget(key: String): Boolean = key in TargetLang.keys(languages())
+
+    /**
+     * The device traffic runs over Wi-Fi (needs ACCESS_NETWORK_STATE). Behind a VPN the active network is the VPN
+     * and its transports do not reliably include Wi-Fi, so then look for a connected non-VPN Wi-Fi network instead.
+     */
+    @Suppress("DEPRECATION")   // allNetworks: deprecated in API 31 but still lists the app-visible networks; no replacement lists them
     fun isOnWifi(ctx: Context): Boolean {
         val cm = ctx.getSystemService(ConnectivityManager::class.java) ?: return false
-        val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
-        return caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+        val active = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
+        if (active.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) return true
+        if (!active.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) return false
+        return cm.allNetworks.any {
+            val c = cm.getNetworkCapabilities(it)
+            c != null && c.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) &&
+                c.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                c.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+        }
     }
 
     /**
@@ -149,8 +163,10 @@ class TranslateRun internal constructor(
                 TranslatorOptions.Builder().setSourceLanguage(source).setTargetLanguage(target.mlkit).build(),
             )
             translators += translator
+            var pending = idx.size
             for (i in idx) {
                 translator.translate(flatten(texts.getValue(i), source)).addOnCompleteListener { t ->
+                    if (--pending == 0 && translators.remove(translator)) translator.close()   // group finished: free the model now
                     if (!t.isSuccessful) {
                         report(i, ParagraphState.Failed)          // §5: only this paragraph fails
                         return@addOnCompleteListener
