@@ -71,4 +71,33 @@ class OcrMergeTest {
         val out = mergeOcr(listOf(c("l", 0, 0, 10, 10, 0.9f), c("r", 10, 0, 20, 10, 0.4f)))
         assertEquals(listOf("l", "r"), out.map { it.text })
     }
+
+    private fun p(text: String, l: Int, t: Int, r: Int, lineH: Int, n: Int): OcrCandidate {
+        val lines = List(n) { Box(l, t + it * (lineH + 6), r, t + it * (lineH + 6) + lineH) }
+        return OcrCandidate(text, Box(l, t, r, lines.last().bottom), lines, 0.9f)
+    }
+
+    @Test
+    fun sentenceWrappedAcrossThreeBlocksIsMergedInReadingOrder() {
+        // line height 20, line gap 6; slight indent on 2nd, ragged right edges
+        val out = mergeOcr(listOf(
+            p("third.", 100, 152, 180, 20, 1),
+            p("first line of the", 100, 100, 400, 20, 1),
+            p("sentence continues", 108, 126, 380, 20, 1),
+        ))
+        assertEquals(1, out.size)
+        assertEquals("first line of the\nsentence continues\nthird.", out[0].text)
+        assertEquals(Box(100, 100, 400, 172), out[0].box)
+        assertEquals(3, out[0].lines.size)
+    }
+
+    @Test
+    fun separateParagraphsStayApart() {
+        val larger = mergeOcr(listOf(p("one", 100, 100, 400, 20, 1), p("two", 100, 160, 400, 20, 1)))   // gap 40 = 2 lines
+        assertEquals(2, larger.size)
+        val otherColumn = mergeOcr(listOf(p("one", 100, 100, 300, 20, 1), p("two", 600, 126, 800, 20, 1)))
+        assertEquals(2, otherColumn.size)
+        val heading = mergeOcr(listOf(p("TITLE", 100, 100, 400, 40, 1), p("body", 100, 146, 400, 20, 1)))
+        assertEquals(2, heading.size)
+    }
 }

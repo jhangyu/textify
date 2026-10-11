@@ -49,6 +49,7 @@ private const val COVER_LIMIT = 0.6f
  * Merges the paragraphs of several recognizers run on the same screenshot (translation spec §1): highest
  * confidence first (ties: longer text, then input order); a paragraph overlapping an already kept one with
  * IoU > 0.5, or covered ≥ 0.6 of its own area by it, is dropped. Equal confidences (e.g. models that report 0) fall through to "longer text wins".
+ * Then paragraphs that continue one another (see [continues]) are joined, so a wrapped sentence is translated whole.
  * Result sorted top-to-bottom, then left-to-right.
  */
 internal fun mergeOcr(candidates: List<OcrCandidate>): List<OcrCandidate> {
@@ -57,5 +58,42 @@ internal fun mergeOcr(candidates: List<OcrCandidate>): List<OcrCandidate> {
     )   // sortedWith is stable: input order breaks remaining ties
     val kept = ArrayList<OcrCandidate>(ranked.size)
     for (c in ranked) if (kept.none { iou(it.box, c.box) > IOU_LIMIT || coverage(c.box, it.box) >= COVER_LIMIT }) kept += c
-    return kept.sortedWith(compareBy({ it.box.top }, { it.box.left }))
+    return joinParagraphs(kept.sortedWith(compareBy({ it.box.top }, { it.box.left })))
+}
+
+private const val MAX_GAP = 0.6f        // vertical gap / line height; ordinary line spacing is 0.2-0.5, paragraph breaks ≥ ~0.8
+private const val MAX_INDENT = 2f       // left-edge shift / line height
+private const val MAX_HEIGHT_RATIO = 1.3f   // headings vs body text differ more than this
+private const val MIN_X_OVERLAP = 0.5f  // share of the narrower box's width
+
+private fun lineHeight(c: OcrCandidate): Float = c.lines.map { it.height }.average().toFloat()
+
+/** True when [b] reads as the continuation of [a]: directly below, similar line height, same column. */
+private fun continues(a: OcrCandidate, b: OcrCandidate): Boolean {
+    val ha = lineHeight(a)
+    val hb = lineHeight(b)
+    val h = min(ha, hb)
+    if (h <= 0f || max(ha, hb) / h > MAX_HEIGHT_RATIO) return false
+    val gap = b.box.top - a.box.bottom
+    if (gap < -0.2f * h || gap > MAX_GAP * h) return false      // negative = overlapped, e.g. side by side
+    if (kotlin.math.abs(a.box.left - b.box.left) > MAX_INDENT * h) return false
+    val overlap = min(a.box.right, b.box.right) - max(a.box.left, b.box.left)
+    return overlap >= MIN_X_OVERLAP * min(a.box.width, b.box.width)
+}
+
+/** Greedy top-down chaining: each paragraph is appended to the first group whose last paragraph it continues. ponytail: O(n²). */
+private fun joinParagraphs(sorted: List<OcrCandidate>): List<OcrCandidate> {
+    val out = ArrayList<OcrCandidate>(sorted.size)
+    for (c in sorted) {
+        val i = out.indexOfFirst { continues(it, c) }
+        if (i < 0) { out += c; continue }
+        val a = out[i]
+        out[i] = OcrCandidate(
+            a.text + "\n" + c.text,
+            Box(min(a.box.left, c.box.left), a.box.top, max(a.box.right, c.box.right), max(a.box.bottom, c.box.bottom)),
+            a.lines + c.lines,
+            a.confidence,
+        )
+    }
+    return out.sortedWith(compareBy({ it.box.top }, { it.box.left }))
 }
