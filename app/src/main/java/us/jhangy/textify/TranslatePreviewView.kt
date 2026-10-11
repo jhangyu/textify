@@ -36,6 +36,11 @@ class TranslatePreviewView @JvmOverloads constructor(context: Context, attrs: At
         style = Paint.Style.STROKE; strokeWidth = 1.4f * d; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND
         color = withAlpha(0.7f, 0x6B5FA8)
     }
+    private val arrowPath = Path().apply {                                 // arrow M5 12h14 M13 6l6 6-6 6 in a 14dp box, origin at row top-left
+        val s = 14 * d / 24f; val cy = (small.fontSpacing + 6 * d) / 2f
+        moveTo(5 * s, cy); lineTo(19 * s, cy)
+        moveTo(13 * s, cy - 6 * s); lineTo(19 * s, cy); lineTo(13 * s, cy + 6 * s)
+    }
     private val pill = PillPainter(withAlpha(0.20f, 0xA78BFA), withAlpha(0.16f, 0xF472B6), withAlpha(0.28f, 0xA78BFA), 12 * d, -1f)
     private val bubble = RectF()
     private val layer = RectF()
@@ -84,6 +89,7 @@ class TranslatePreviewView @JvmOverloads constructor(context: Context, attrs: At
         val pad = glowPad(blur, spread, dy)
         shadowDst.set(bubble.left - pad, bubble.top - pad, bubble.right + pad, bubble.bottom + pad)
         underline.shader = LinearGradient(layer.left + 8 * d, 0f, layer.right - 8 * d, 0f, HALO, null, Shader.TileMode.CLAMP)
+        dstPill.shader = LinearGradient(0f, 0f, small.measureText(dstLabel) + 20 * d, 0f, 0xFFA78BFA.toInt(), 0xFFF472B6.toInt(), Shader.TileMode.CLAMP)
         band.shader = LinearGradient(0f, 0f, bw * BAND, 0f, BAND_COLORS, BAND_STOPS, Shader.TileMode.CLAMP)
     }
 
@@ -134,15 +140,15 @@ class TranslatePreviewView @JvmOverloads constructor(context: Context, attrs: At
         small.color = 0xFF6B5FA8.toInt()
         canvas.drawText(srcLabel, x + 10 * d, ty, small)
         x += sw + gap
-        val s = aw / 24f                                                   // arrow path M5 12h14 M13 6l6 6-6 6
-        val cy = top + h / 2f
-        canvas.drawPath(Path().apply {
-            moveTo(x + 5 * s, cy); lineTo(x + 19 * s, cy)
-            moveTo(x + 13 * s, cy - 6 * s); lineTo(x + 19 * s, cy); lineTo(x + 13 * s, cy + 6 * s)
-        }, arrow)
+        canvas.save()
+        canvas.translate(x, top)
+        canvas.drawPath(arrowPath, arrow)
+        canvas.restore()
         x += aw + gap
-        dstPill.shader = LinearGradient(x, 0f, x + dw, 0f, 0xFFA78BFA.toInt(), 0xFFF472B6.toInt(), Shader.TileMode.CLAMP)
-        canvas.drawRoundRect(x, top, x + dw, top + h, h / 2f, h / 2f, dstPill)
+        canvas.save()
+        canvas.translate(x, 0f)                                            // dstPill shader is built at origin (layoutBubble)
+        canvas.drawRoundRect(0f, top, dw, top + h, h / 2f, h / 2f, dstPill)
+        canvas.restore()
         small.color = Color.WHITE
         canvas.drawText(dstLabel, x + 10 * d, ty, small)
     }

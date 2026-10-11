@@ -19,7 +19,6 @@ import android.graphics.drawable.LayerDrawable
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.view.animation.PathInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -77,7 +76,7 @@ class SettingsActivity : AppCompatActivity() {
         // settingsIn 320 (0,0,.2,1): alpha 0 -> 1, scale 1.04 -> 1; then the preview lines light (§7.4)
         b.content.apply { alpha = 0f; scaleX = 1.04f; scaleY = 1.04f }
         b.content.animate().alpha(1f).scaleX(1f).scaleY(1f)
-            .setDuration(SETTINGS_IN).setInterpolator(ENTER)
+            .setDuration(SETTINGS_IN).setInterpolator(Easing.DECELERATE)
             .withEndAction { b.preview.setScripts(Prefs.scripts(this), animate = true) }
     }
 
@@ -127,7 +126,7 @@ class SettingsActivity : AppCompatActivity() {
         if (leaving) return
         leaving = true
         b.content.animate().alpha(0f).scaleX(1.04f).scaleY(1.04f)
-            .setDuration(SETTINGS_OUT).setInterpolator(EXIT)
+            .setDuration(SETTINGS_OUT).setInterpolator(Easing.CLOSE)
             .withEndAction { finish() }
     }
 
@@ -237,7 +236,7 @@ class SettingsActivity : AppCompatActivity() {
     /** msgIn 220 ease-out (alpha, translationY -8dp -> 0); resting text out 160; auto-hide at msgIn + blockHold 1500. */
     private fun showBlock() {
         main.removeCallbacks(autoHide)
-        b.noteBlock.animate().alpha(1f).translationY(0f).setDuration(MSG_IN).setInterpolator(EASE_OUT)
+        b.noteBlock.animate().alpha(1f).translationY(0f).setDuration(MSG_IN).setInterpolator(Easing.EASE_OUT)
         b.noteRest.animate().alpha(0f).setDuration(NOTE_FADE)
         b.notice.requestRectangleOnScreen(Rect(0, 0, b.notice.width, b.notice.height))
         main.postDelayed(autoHide, MSG_IN + BLOCK_HOLD)
@@ -246,7 +245,7 @@ class SettingsActivity : AppCompatActivity() {
     /** msgOut 160 ease-in (alpha -> 0, translationY -> -8dp); resting text back. Always retargets: a show queued this frame has not moved the alpha yet. */
     private fun hideBlock() {
         main.removeCallbacks(autoHide)
-        b.noteBlock.animate().alpha(0f).translationY(-8 * d).setDuration(MSG_OUT).setInterpolator(EASE_IN)
+        b.noteBlock.animate().alpha(0f).translationY(-8 * d).setDuration(MSG_OUT).setInterpolator(Easing.EASE_IN)
         b.noteRest.animate().alpha(1f).setDuration(NOTE_FADE)
     }
 
@@ -306,7 +305,7 @@ class SettingsActivity : AppCompatActivity() {
         val x = if (wifiOnly) 20 * d else 0f
         val a = if (wifiOnly) 1f else 0f
         if (animate) {
-            b.wifiThumb.animate().translationX(x).setDuration(TOGGLE).setInterpolator(EMPHASIZED)
+            b.wifiThumb.animate().translationX(x).setDuration(TOGGLE).setInterpolator(Easing.EMPHASIZED)
             b.wifiTrackOn.animate().alpha(a).setDuration(TOGGLE)
         } else {
             b.wifiThumb.translationX = x
@@ -314,10 +313,13 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
+    private var modelRequest = 0   // latest refreshModels call; older (out-of-order) results are ignored
+
     /** Spec §4: the downloaded set comes from ML Kit every time; downloading / waiting come from Translate. */
     private fun refreshModels() {
+        val request = ++modelRequest
         Translate.downloaded { done ->
-            if (!isDestroyed) renderModels(modelRows(done, Translate.downloading, Translate.waitingWifi))
+            if (!isDestroyed && request == modelRequest) renderModels(modelRows(done, Translate.downloading, Translate.waitingWifi))
         }
     }
 
@@ -370,6 +372,9 @@ class SettingsActivity : AppCompatActivity() {
         texts.addView(label(getString(sub), 12.5f, state == ModelState.DOWNLOADING, subColor))
         row.addView(texts, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = px(12f) })
         row.addView(modelAction(code, state))
+        if (waiting) {                                       // tap a waiting row to retry (download() re-checks the network)
+            row.setOnClickListener { Translate.download(this, code); refreshModels() }
+        }
         return row
     }
 
@@ -454,18 +459,18 @@ class SettingsActivity : AppCompatActivity() {
         b.sheet.visibility = View.VISIBLE
         b.sheetScrim.animate().cancel()
         b.sheet.animate().cancel()
-        b.sheetScrim.animate().alpha(1f).setDuration(SHEET_IN).setInterpolator(EASE_OUT)
+        b.sheetScrim.animate().alpha(1f).setDuration(SHEET_IN).setInterpolator(Easing.EASE_OUT)
         b.sheet.translationY = b.root.height.toFloat()
-        b.sheet.animate().translationY(0f).setDuration(SHEET_IN).setInterpolator(DECELERATE)
+        b.sheet.animate().translationY(0f).setDuration(SHEET_IN).setInterpolator(Easing.DECELERATE)
     }
 
     /** sheetOut 240 (accelerate); tap on the scrim or back. */
     private fun closeSheet() {
         if (sheetMode == SheetMode.NONE) return
         sheetMode = SheetMode.NONE
-        b.sheetScrim.animate().alpha(0f).setDuration(SHEET_OUT).setInterpolator(EASE_IN)
+        b.sheetScrim.animate().alpha(0f).setDuration(SHEET_OUT).setInterpolator(Easing.EASE_IN)
             .withEndAction { b.sheetScrim.visibility = View.GONE }
-        b.sheet.animate().translationY(b.sheet.height.toFloat()).setDuration(SHEET_OUT).setInterpolator(ACCELERATE)
+        b.sheet.animate().translationY(b.sheet.height.toFloat()).setDuration(SHEET_OUT).setInterpolator(Easing.ACCELERATE)
             .withEndAction { b.sheet.visibility = View.GONE }
     }
 
@@ -569,10 +574,6 @@ class SettingsActivity : AppCompatActivity() {
         private const val MSG_OUT = 160L
         private const val NOTE_FADE = 160L
         private const val BLOCK_HOLD = 1500L
-        private val ENTER = PathInterpolator(0f, 0f, 0.2f, 1f)       // settingsIn
-        private val EXIT = PathInterpolator(0.3f, 0f, 0.8f, 0.15f)   // settingsOut
-        private val EASE_OUT = PathInterpolator(0f, 0f, 0.58f, 1f)   // msgIn
-        private val EASE_IN = PathInterpolator(0.42f, 0f, 1f, 1f)    // msgOut
         // translation card (prism-tide TIMINGS, ms)
         private const val TOGGLE = 200L
         private const val ROW_ANIM = 260L
@@ -581,9 +582,6 @@ class SettingsActivity : AppCompatActivity() {
         private const val SHEET_OUT = 240L
         private const val PICK_HOLD = 220L
         private const val SHEET_MAX = 0.74f
-        private val EMPHASIZED = PathInterpolator(0.2f, 0f, 0f, 1f)  // toggle thumb
-        private val DECELERATE = PathInterpolator(0f, 0f, 0.2f, 1f)  // sheetIn
-        private val ACCELERATE = PathInterpolator(0.4f, 0f, 1f, 1f)  // sheetOut
         private val INK = 0xFF1E1B4B.toInt()
         private val SECONDARY = 0xFF6B5FA8.toInt()
         private val VIOLET = 0xFF7C3AED.toInt()
