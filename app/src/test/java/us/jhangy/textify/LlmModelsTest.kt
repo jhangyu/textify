@@ -33,15 +33,13 @@ class LlmModelsTest {
     }
 
     @Test
-    fun threeModelsInOrderWithPinnedSizes() {
-        assertEquals(listOf("hymt", "gemma", "qwen"), MODELS.map { it.key })
+    fun twoModelsInOrderWithPinnedSizes() {
+        assertEquals(listOf("hymt", "gemma"), MODELS.map { it.key })
         assertEquals(2_588_147_712L, modelOf("gemma").size)
-        assertEquals(971_293_456L, modelOf("qwen").size)
-        assertEquals(listOf("qwen"), MODELS.filter { it.fp32Activations }.map { it.key })   // only Qwen needs fp32 GPU activations
     }
 
     @Test
     fun chatModelsTurnThinkingOff() {
-        for (key in listOf("gemma", "qwen")) assertEquals(key, false, modelOf(key).context["enable_thinking"])
+        assertEquals(false, modelOf("gemma").context["enable_thinking"])
     }
 }
