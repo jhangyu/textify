@@ -5,6 +5,7 @@ import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.PixelFormat
+import android.graphics.drawable.AnimatedVectorDrawable
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.MotionEvent
@@ -16,6 +17,7 @@ import android.view.WindowManager.LayoutParams.MATCH_PARENT
 import android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
 import android.view.WindowManager.LayoutParams.WRAP_CONTENT
 import android.view.animation.PathInterpolator
+import android.widget.ImageView
 import kotlin.math.hypot
 
 /**
@@ -31,7 +33,7 @@ class Bubble(private val ctx: Context, private val onTap: () -> Unit, private va
     private fun px(v: Int) = (v * dp).toInt()
 
     private val bubble: View = LayoutInflater.from(ctx).inflate(R.layout.bubble, null)
-    private val icon: View = bubble.findViewById(R.id.bubbleIcon)
+    private val icon: ImageView = bubble.findViewById(R.id.bubbleIcon)
     private val zone: View = LayoutInflater.from(ctx).inflate(R.layout.dismiss_target, null)
     private val target: View = zone.findViewById(R.id.dismissTarget)
     private val glow: View = zone.findViewById(R.id.dismissGlow)
@@ -91,11 +93,12 @@ class Bubble(private val ctx: Context, private val onTap: () -> Unit, private va
             }.start()
     }
 
-    /** bubbleIn 300: visible and touchable, alpha 1 / scale 1. */
+    /** bubbleIn 300: visible and touchable, alpha 1 / scale 1; replays the Lumen Pill glyph entrance (avd_scan_in). */
     fun fadeIn() {
         hidden = false
         bubble.visibility = View.VISIBLE
         setTouchable(true)
+        (icon.drawable as AnimatedVectorDrawable).run { reset(); start() }
         icon.animate().alpha(1f).scaleX(1f).scaleY(1f)
             .setDuration(BUBBLE_IN).setInterpolator(EMPHASIZED).start()
     }

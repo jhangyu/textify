@@ -13,6 +13,6 @@
         android:background="@drawable/bubble_bg"
         android:contentDescription="@string/app_name"
         android:elevation="6dp"
-        android:padding="15dp"
-        android:src="@drawable/ic_scan" />
+        android:padding="9dp"
+        android:src="@drawable/avd_scan_in" />
 </FrameLayout>

@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:drawable="@drawable/ic_scan">
+    <target android:name="pill">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:propertyName="scaleX" android:valueType="floatType"
+                android:valueFrom="0" android:valueTo="1" android:duration="300"
+                android:interpolator="@interpolator/emphasized" />
+        </aapt:attr>
+    </target>
+    <target android:name="stem">
+        <aapt:attr name="android:animation">
+            <set android:ordering="sequentially">
+                <objectAnimator android:propertyName="translateY" android:valueType="floatType"
+                    android:valueFrom="-3" android:valueTo="-3" android:duration="0" />
+                <objectAnimator android:propertyName="translateY" android:valueType="floatType"
+                    android:valueFrom="-3" android:valueTo="0" android:startOffset="120" android:duration="220"
+                    android:interpolator="@interpolator/emphasized" />
+            </set>
+        </aapt:attr>
+    </target>
+    <target android:name="stemPath">
+        <aapt:attr name="android:animation">
+            <set android:ordering="sequentially">
+                <objectAnimator android:propertyName="fillAlpha" android:valueType="floatType"
+                    android:valueFrom="0" android:valueTo="0" android:duration="0" />
+                <objectAnimator android:propertyName="fillAlpha" android:valueType="floatType"
+                    android:valueFrom="0" android:valueTo="1" android:startOffset="120" android:duration="220"
+                    android:interpolator="@interpolator/emphasized" />
+            </set>
+        </aapt:attr>
+    </target>
+    <target android:name="shine">
+        <aapt:attr name="android:animation">
+            <set android:ordering="sequentially">
+                <objectAnimator android:propertyName="translateX" android:valueType="floatType"
+                    android:valueFrom="-4" android:valueTo="-4" android:duration="0" />
+                <objectAnimator android:propertyName="translateX" android:valueType="floatType"
+                    android:valueFrom="-4" android:valueTo="10" android:startOffset="260" android:duration="380"
+                    android:interpolator="@android:interpolator/fast_out_slow_in" />
+            </set>
+        </aapt:attr>
+    </target>
+    <target android:name="shinePath">
+        <aapt:attr name="android:animation">
+            <set android:ordering="sequentially">
+                <objectAnimator android:propertyName="fillAlpha" android:valueType="floatType"
+                    android:valueFrom="1" android:valueTo="1" android:startOffset="260" android:duration="0" />
+                <objectAnimator android:propertyName="fillAlpha" android:valueType="floatType"
+                    android:valueFrom="0" android:valueTo="0" android:startOffset="380" android:duration="0" />
+            </set>
+        </aapt:attr>
+    </target>
+</animated-vector>
