@@ -11,12 +11,12 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.Shader
 import android.os.Bundle
-import android.text.StaticLayout
-import android.text.TextPaint
+import android.text.Layout
 import android.util.TypedValue
 import android.view.GestureDetector
 import android.view.Gravity
 import android.view.MotionEvent
+import android.view.View
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.animation.LinearInterpolator
 import android.view.animation.PathInterpolator
@@ -159,31 +159,31 @@ class PillView(context: Context, val block: OcrBlock) : AppCompatTextView(contex
     /** Spec §3: wrap inside the box; largest size from the original size (≥ 10sp) down to 10sp; truncate below that. */
     private fun applyTranslatedLayout(text: String) {
         val lp = layoutParams
-        val innerW = max(1, lp.width - paddingLeft - paddingRight)
         val innerH = max(1, lp.height - paddingTop - paddingBottom)
         val minPx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, MIN_SP, resources.displayMetrics)
-        val measure = TextPaint(paint).apply { textScaleX = 1f }
-        fun layout(px: Float): StaticLayout {
-            measure.textSize = px
-            return StaticLayout.Builder.obtain(text, 0, text.length, measure, innerW)
-                .setLineSpacing(0f, TR_SPACING)
-                .setIncludePad(false)
-                .build()
-        }
-        val fit = fitTextSize(max(originalTextPx, minPx), minPx, 1f, innerH) { layout(it).height }
+        // measure with the TextView's own layout so fallback-font line heights match what is drawn (one path, API 26+)
         setHorizontallyScrolling(false)
         textScaleX = 1f
         setLineSpacing(0f, TR_SPACING)
-        setTextSize(TypedValue.COMPLEX_UNIT_PX, fit.textPx)
+        maxLines = Int.MAX_VALUE
+        fun layoutAt(px: Float): Layout {
+            setTextSize(TypedValue.COMPLEX_UNIT_PX, px)
+            measure(
+                View.MeasureSpec.makeMeasureSpec(lp.width, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+            )
+            return layout
+        }
+        val fit = fitTextSize(max(originalTextPx, minPx), minPx, 1f, innerH) { layoutAt(it).height }
         truncated = fit.truncated
         markLinePx = 0f
-        maxLines = Int.MAX_VALUE
         if (truncated) {
-            val at10 = layout(minPx)
+            val at10 = layoutAt(minPx)
             val line = (at10.getLineBottom(0) - at10.getLineTop(0)).toFloat()
             maxLines = max(1, (innerH / line).toInt())
             markLinePx = line + PAD_Y_DP * dp
         }
+        setTextSize(TypedValue.COMPLEX_UNIT_PX, fit.textPx)
         ellipsize = null                                 // custom "⋯" mark instead of the system ellipsis (final pick)
         scrollTo(0, 0)
     }
@@ -399,7 +399,7 @@ class PillView(context: Context, val block: OcrBlock) : AppCompatTextView(contex
         if (reveal > 0f) {
             val clip = canvas.save()
             clipReveal(canvas, w, h, GLOW_CLIP_DP * dp)
-            card.draw(canvas, glowAlpha, markLinePx)
+            card.draw(canvas, glowAlpha)
             canvas.restoreToCount(clip)
         }
         if (!prismX.isNaN()) sweep(canvas, prismPaint, prismX, w * BAND)
@@ -411,13 +411,15 @@ class PillView(context: Context, val block: OcrBlock) : AppCompatTextView(contex
         if (!shineX.isNaN()) sweep(canvas, shine, shineX, w * SHINE_BAND)
         canvas.restoreToCount(saved)
         when {
-            translationText == null || reveal >= 1f -> super.onDraw(canvas)   // glyphs + selection highlight
+            translationText == null -> super.onDraw(canvas)                   // glyphs + selection highlight
             reveal > 0f -> {                                                  // translated text only where the card is
                 val clip = canvas.save()
                 canvas.translate(scrollX.toFloat(), scrollY.toFloat())
                 clipReveal(canvas, w, h, 0f)
                 canvas.translate(-scrollX.toFloat(), -scrollY.toFloat())
                 super.onDraw(canvas)
+                canvas.translate(scrollX.toFloat(), scrollY.toFloat())
+                if (markLinePx > 0f) card.drawMark(canvas, markLinePx)       // over the text, under the same clip
                 canvas.restoreToCount(clip)
             }
         }

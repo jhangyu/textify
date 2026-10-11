@@ -88,9 +88,9 @@ internal class CardPainter(res: Resources) {
 
     /**
      * Draws into (0, 0, w, h) of the current canvas. [glowAlpha] multiplies the lavender glow (0.6 rest, 1.0 focus);
-     * [markLinePx] = height of the "⋯" mark area (one text line + bottom padding), 0 = not truncated.
+     * The truncation mark is drawn separately by [drawMark] after the text.
      */
-    fun draw(canvas: Canvas, glowAlpha: Float, markLinePx: Float) {
+    fun draw(canvas: Canvas, glowAlpha: Float) {
         if (w <= 0f || h <= 0f) return
         lavender?.let {
             glowPaint.alpha = (glowAlpha.coerceIn(0f, 1f) * 255f).roundToInt()
@@ -101,14 +101,13 @@ internal class CardPainter(res: Resources) {
             canvas.drawBitmap(it, null, violetDst, glowPaint)
         }
         canvas.drawRoundRect(0f, 0f, w, h, r, r, fill)
-        if (markLinePx > 0f) drawMark(canvas, markLinePx)
         val inset = max(UNDERLINE_INSET_DP * density, r)
         val uh = UNDERLINE_DP * density
         canvas.drawRoundRect(inset, h - uh, w - inset, h, uh / 2f, uh / 2f, underline)
     }
 
-    /** proposal-1 .mark: padding 0 6dp 0 18dp, fade transparent -> card colour at 45 %, "⋯" 13sp bold at 75 %. */
-    private fun drawMark(canvas: Canvas, areaH: Float) {
+    /** [areaH] = height of the "⋯" mark area (one text line + bottom padding). proposal-1 .mark: padding 0 6dp 0 18dp, fade transparent -> card colour at 45 %, "⋯" 13sp bold at 75 %. */
+    fun drawMark(canvas: Canvas, areaH: Float) {
         val right = w - MARK_END_DP * density
         val left = right - mark.measureText(MARK) - MARK_START_DP * density
         val top = h - areaH
