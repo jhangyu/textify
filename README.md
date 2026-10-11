@@ -6,21 +6,30 @@ captures the current screen via MediaProjection and runs on-device OCR
 Android 8+ device.
 
 ## How it works
-1. `MainActivity` requests the overlay permission + screen-capture consent, lets
-   you pick the OCR language, then starts `CaptureService`.
+1. Launching Textify opens `MainActivity`, which only routes: if the bubble is already
+   running it opens `SettingsActivity`; if the "display over other apps" permission is
+   missing it shows a one-screen onboarding with a looping demo and a shortcut to that
+   system setting; otherwise it asks for screen-capture consent. On consent
+   `CaptureService` starts and the app closes; without consent it closes with a toast.
 2. `CaptureService` (foreground, type `mediaProjection`) keeps one VirtualDisplay +
    ImageReader for its whole lifetime and shows a draggable bubble. Tapping the
    bubble fades it out, takes the latest frame and opens `SessionActivity`.
-   Dragging the bubble onto the bottom target stops the service.
+   Dragging the bubble onto the bottom target ends the service.
 3. `SessionActivity` freezes the screen: the screenshot is shown 1:1 under hidden
    system bars with an edge glow while `Ocr` runs, then every recognised line
    becomes a pill. Tap a pill to copy the line (the pill shines and flashes);
    long-press for partial selection with the system copy menu. X or back closes
-   the session and the bubble returns.
+   the session and the bubble returns. The settings button next to X closes the
+   session and opens `SettingsActivity`.
+4. `SettingsActivity` shows the overlay-permission state (with a shortcut to the system
+   setting) and the OCR language selection. The bubble stays hidden while it is open
+   and returns when you leave it. Changes apply from the next capture.
 
 ## OCR languages
-Chinese model (also covers Latin/English), Japanese, Korean — switch in the app.
-All run fully offline. See `Ocr.kt`.
+Multi-select, at least one: Chinese (Traditional and Simplified), Japanese, Korean —
+chosen in Settings. Every model also reads Latin/English. All selected models run in
+parallel on the same screenshot; where two lines overlap (IoU > 0.5) the higher-confidence
+one is kept (`OcrMerge.kt`). All run fully offline. See `Ocr.kt`.
 `// ponytail:` ML Kit picks its own compute backend (CPU/GPU via NNAPI); it
 exposes no NPU/int4 control. Upgrade path if speed matters: swap in a
 LiteRT int4 model with a hardware delegate.
