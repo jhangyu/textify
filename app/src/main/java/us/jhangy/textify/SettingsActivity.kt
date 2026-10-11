@@ -97,12 +97,14 @@ class SettingsActivity : AppCompatActivity() {
         main.postDelayed(recheck, RECHECK)
         Translate.onModelsChanged = { refreshModels() }   // a session download may finish while Settings is open
         refreshModels()                                    // spec §4: query ML Kit every time Settings opens
+        b.trPreview.resume()
     }
 
     override fun onPause() {
         main.removeCallbacks(recheck)
         b.demo.pause()
         Translate.onModelsChanged = null
+        b.trPreview.pause()
         super.onPause()
     }
 
@@ -293,9 +295,10 @@ class SettingsActivity : AppCompatActivity() {
         b.sheetScrim.setOnClickListener { closeSheet() }
     }
 
-    /** Shows the target in the target row (Task 10 also updates the preview here). */
+    /** Shows the target in the target row and the preview strip. */
     private fun applyTarget(key: String) {
         b.targetValue.text = Languages.targetTitle(key)
+        b.trPreview.setTarget(key)
     }
 
     /** toggle 200 (.2,0,0,1): on track fades in, thumb slides 20dp. */

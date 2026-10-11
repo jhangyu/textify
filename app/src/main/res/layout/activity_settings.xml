@@ -354,6 +354,13 @@
                             android:textColor="#6B5FA8" android:textSize="13sp" />
                     </LinearLayout>
 
+                    <!-- .tpv looping preview (prism-tide note 10); .rows margin-top 14 -->
+                    <us.jhangy.textify.TranslatePreviewView
+                        android:id="@+id/trPreview"
+                        android:layout_width="match_parent" android:layout_height="118dp"
+                        android:layout_marginBottom="14dp"
+                        android:importantForAccessibility="no" />
+
                     <!-- .rows: target + Wi-Fi-only (prow: min 56dp, padding 16/10/10/10) -->
                     <LinearLayout
                         android:id="@+id/trRows"
