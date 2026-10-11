@@ -3,7 +3,7 @@ package us.jhangy.textify
 import java.util.Locale
 
 /*
- * Pure rules for general chat models (Gemma, Qwen): prompt and output cleanup. Same shape as HyMtRules, so the generic
+ * Pure rules for general chat models (Gemma): prompt and output cleanup. Same shape as HyMtRules, so the generic
  * engine calls either. No Android or LiteRT-LM imports.
  */
 internal object ChatRules {
