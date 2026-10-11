@@ -38,6 +38,10 @@ android {
             isMinifyEnabled = false
             if (storeFile != null) signingConfig = signingConfigs.getByName("release")
         }
+        // Same key as release, so debug and release builds install over each other without uninstalling.
+        debug {
+            if (storeFile != null) signingConfig = signingConfigs.getByName("release")
+        }
     }
 
     compileOptions {
