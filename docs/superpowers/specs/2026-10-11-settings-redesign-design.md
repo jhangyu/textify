@@ -34,3 +34,10 @@ Implementation; app-UI language switching; dark theme.
 - Speed copy must not claim 2×/3× (models run in parallel); English lines light for any selected script.
 - Verify before implementing: consent-dialog wording / API 34 "share entire screen" picker; API 30+ behaviour of
   ACTION_MANAGE_OVERLAY_PERMISSION with a package Uri.
+
+## Final picks (user, after round 2)
+- Launcher icon: `icon-final-3-diagonal-veil.html` (foreground, background, monochrome = glyph only, no ring).
+- No separate round variant: the circular-ring `ic_launcher_round` looked worse than the adaptive icon under a circle
+  mask, so `android:roundIcon` points at the same adaptive icon.
+- Bubble glyph: lumen-pill, 9dp padding; notification icon: prism-frame (data in `icon-final-3-diagonal-veil.html`).
+- Settings: `settings-final.html` is final (merged page; permission + language sections; onboarding = `permission-2-living-demo.html`).
