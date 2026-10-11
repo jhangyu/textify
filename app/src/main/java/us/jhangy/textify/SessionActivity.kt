@@ -15,6 +15,7 @@ import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Matrix
 import android.graphics.RadialGradient
+import android.graphics.Rect
 import android.graphics.Shader
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
@@ -68,6 +69,7 @@ class SessionActivity : AppCompatActivity() {
     private val pills = ArrayList<PillView>()
     private val chips = ArrayList<StatusChipView>()
     private var states: Array<ParagraphState?> = emptyArray()
+    private var textGen = IntArray(0)         // bumped when paragraph i's text changes (flip); older runs' results are dropped
     private val cardColors = HashMap<Int, Int>()
     private var tideAt = LongArray(0)         // uptime at which the current tide reaches box i (shimmer starts then)
     private var iconTint: ValueAnimator? = null
@@ -151,21 +153,17 @@ class SessionActivity : AppCompatActivity() {
     }
 
     private fun showPills(found: List<OcrBlock>) {
-        val d = resources.displayMetrics.density
-        val padX = (PillView.PAD_X_DP * d).roundToInt()
-        val padY = (PillView.PAD_Y_DP * d).roundToInt()
         blocks = found                        // mergeOcr order (top, then left): pills, selection and translation all index this list
         states = arrayOfNulls(blocks.size)
+        textGen = IntArray(blocks.size)
         tideAt = LongArray(blocks.size)
         val n = blocks.size
         blocks.forEachIndexed { i, block ->
             val pill = PillView(this, block)
-            pill.layoutParams = FrameLayout.LayoutParams(block.box.width() + 2 * padX, block.box.height() + 2 * padY).apply {
-                leftMargin = block.box.left - padX - origin[0]
-                topMargin = block.box.top - padY - origin[1]
-            }
+            pill.layoutParams = FrameLayout.LayoutParams(0, 0).also { place(it, block) }
             pill.selectionActive = { actionMode != null }
             pill.onTap = { p, dismissOnly -> onPillTap(i, p, dismissOnly) }
+            pill.onDoubleTap = { flip(i) }
             pill.customSelectionActionModeCallback = selectionCallback(pill)
             b.pills.addView(pill)
             pills += pill
@@ -173,20 +171,32 @@ class SessionActivity : AppCompatActivity() {
             pill.playIn(if (n > 1) (i * BOX_STAGGER / (n - 1)).roundToLong() else 0L)
         }
         // chips after every box so they draw above them (prism-tide .chip: right -6dp, top -11dp of the box)
-        val containerW = b.pills.width
         for (pill in pills) {
-            val lp = pill.layoutParams as FrameLayout.LayoutParams
             val chip = StatusChipView(this)
             chip.layoutParams = FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, (CHIP_H_DP * d).roundToInt(), Gravity.TOP or Gravity.RIGHT,
-            ).apply {
-                rightMargin = containerW - (lp.leftMargin + lp.width) - (CHIP_DX_DP * d).roundToInt()
-                topMargin = lp.topMargin - (CHIP_DY_DP * d).roundToInt()
-            }
+                ViewGroup.LayoutParams.WRAP_CONTENT, dp(CHIP_H_DP).roundToInt(), Gravity.TOP or Gravity.RIGHT,
+            ).also { placeChip(it, pill) }
             b.pills.addView(chip)
             chips += chip
         }
         showTranslateButton()
+    }
+
+    /** Pill frame = paragraph box plus padding, in view px. */
+    private fun place(lp: FrameLayout.LayoutParams, block: OcrBlock) {
+        val padX = dp(PillView.PAD_X_DP).roundToInt()
+        val padY = dp(PillView.PAD_Y_DP).roundToInt()
+        lp.width = block.box.width() + 2 * padX
+        lp.height = block.box.height() + 2 * padY
+        lp.leftMargin = block.box.left - padX - origin[0]
+        lp.topMargin = block.box.top - padY - origin[1]
+    }
+
+    /** prism-tide .chip: right -6dp, top -11dp of the box. */
+    private fun placeChip(lp: FrameLayout.LayoutParams, pill: PillView) {
+        val p = pill.layoutParams as FrameLayout.LayoutParams
+        lp.rightMargin = b.pills.width - (p.leftMargin + p.width) - dp(CHIP_DX_DP).roundToInt()
+        lp.topMargin = p.topMargin - dp(CHIP_DY_DP).roundToInt()
     }
 
     /** Tap on paragraph [i]: drop a selection, copy the translation (translated card) or the paragraph. */
@@ -198,6 +208,47 @@ class SessionActivity : AppCompatActivity() {
             pill.showsTranslation && shown != null -> copyText(pill, shown)
             else -> copyText(pill, blocks[i].text)
         }
+    }
+
+    /**
+     * Double tap on paragraph [i]: re-read its characters in the other orientation (ML Kit cannot tell rows from
+     * columns in a CJK grid) and re-translate that paragraph only (when translation is on; otherwise on the next run).
+     * Adjacent small CJK paragraphs of the same bubble ([flipNeighbours]) are absorbed: their characters join the
+     * regroup, their pills are hidden and their entries emptied (index stays, so every per-paragraph list keeps lining up).
+     */
+    private fun flip(i: Int) {
+        if (closing) return
+        val old = blocks[i]
+        if (old.chars.isEmpty()) return
+        val absorbed = flipNeighbours(i, blocks.map { it.box.toBox() }, blocks.map { it.text }, old.chars)
+        val chars = old.chars + absorbed.flatMap { blocks[it].chars }
+        val (text, lines) = regroup(chars, !old.vertical)
+        val box = Rect(old.box).apply { absorbed.forEach { union(blocks[it].box) } }
+        val block = old.copy(text = text, box = box, lines = lines.map { it.toRect() }, vertical = !old.vertical, chars = chars)
+        actionMode?.finish()
+        panel.close()
+        blocks = blocks.toMutableList().also { list ->
+            list[i] = block
+            absorbed.forEach { list[it] = OcrBlock("", list[it].box, emptyList()) }   // empty text: never translated
+        }
+        for (j in absorbed + i) {
+            textGen[j]++                          // drops in-flight results
+            states[j] = null
+        }
+        for (j in absorbed) {
+            pendingShimmer.remove(pills[j])?.let { pills[j].removeCallbacks(it) }
+            pills[j].visibility = View.GONE
+            chips[j].show(null)
+        }
+        if (absorbed.isNotEmpty()) {
+            cardColors.remove(i)
+            place(pills[i].layoutParams as FrameLayout.LayoutParams, block)
+            placeChip(chips[i].layoutParams as FrameLayout.LayoutParams, pills[i])
+            pills[i].requestLayout()
+            chips[i].requestLayout()
+        }
+        pills[i].block = block
+        if (translating) translate(mapOf(i to text))
     }
 
     /** Panel header "source → target" (e.g. 英文 → 繁體中文), original paragraph and full translation. */
@@ -261,8 +312,14 @@ class SessionActivity : AppCompatActivity() {
 
     /** Spec §2/§5: never-run, WaitingWifi and Failed paragraphs are (re)translated; others keep their result. */
     private fun startRun() {
-        val todo = blocks.indices.filter { needsRun(states[it]) }.associateWith { blocks[it].text }
-        if (todo.isNotEmpty()) runs += Translate.start(this, todo, Prefs.target(this), ::onParagraphState)
+        val todo = blocks.indices.filter { needsRun(states[it]) && blocks[it].text.isNotEmpty() }.associateWith { blocks[it].text }
+        if (todo.isNotEmpty()) translate(todo)
+    }
+
+    /** Starts a run for [todo] (paragraph index -> text); results for a paragraph flipped since are dropped. */
+    private fun translate(todo: Map<Int, String>) {
+        val gen = textGen.copyOf()
+        runs += Translate.start(this, todo, Prefs.target(this)) { i, s -> if (textGen[i] == gen[i]) onParagraphState(i, s) }
     }
 
     private fun onParagraphState(i: Int, s: ParagraphState) {

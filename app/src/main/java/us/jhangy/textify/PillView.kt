@@ -35,16 +35,30 @@ import kotlin.math.roundToInt
  * Vertical CJK paragraph + CJK target: the translation is drawn as columns right to left (VerticalText.kt); the
  * TextView keeps the same text transparent so long-press select / copy still work (handles are not on the columns).
  * Tap is detected with GestureDetector: a selectable TextView is focusable in touch mode, so the first tap would
- * only take focus and never reach an OnClickListener.
+ * only take focus and never reach an OnClickListener. A single tap fires once the double-tap timeout has passed;
+ * the second tap of a double tap is kept from the TextView (no word selection).
  */
 @SuppressLint("ViewConstructor")
-class PillView(context: Context, val block: OcrBlock) : AppCompatTextView(context) {
+class PillView(context: Context, block: OcrBlock) : AppCompatTextView(context) {
+
+    /** The paragraph; a new one (orientation flip) re-lays the original text unless a translation is shown. */
+    var block: OcrBlock = block
+        set(value) {
+            field = value
+            if (translationText == null) {
+                text = value.text
+                applyOriginalLayout()
+            }
+        }
 
     /** How the translated card appears / disappears. */
     enum class Reveal { NONE, TOP_DOWN, LEFT_RIGHT }
 
     /** Single tap. dismissOnly = a text selection was alive when the finger went down. */
     var onTap: ((pill: PillView, dismissOnly: Boolean) -> Unit)? = null
+
+    /** Double tap (flip the paragraph's orientation). */
+    var onDoubleTap: ((pill: PillView) -> Unit)? = null
 
     /** Supplied by the activity: is any selection ActionMode alive right now? */
     var selectionActive: () -> Boolean = { false }
@@ -112,11 +126,18 @@ class PillView(context: Context, val block: OcrBlock) : AppCompatTextView(contex
     private var revealAnim: ValueAnimator? = null
     private var focusAnim: ValueAnimator? = null
     private var dismissOnly = false
+    private var swallow = false                   // second tap of a double tap: not passed to the TextView
 
     private val gestures = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
-        override fun onSingleTapUp(e: MotionEvent): Boolean {
+        override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
             onTap?.invoke(this@PillView, dismissOnly)
             return false
+        }
+
+        override fun onDoubleTap(e: MotionEvent): Boolean {
+            swallow = true
+            onDoubleTap?.invoke(this@PillView)
+            return true
         }
 
         override fun onLongPress(e: MotionEvent) = press(false)
@@ -392,6 +413,10 @@ class PillView(context: Context, val block: OcrBlock) : AppCompatTextView(contex
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> press(false)
         }
         gestures.onTouchEvent(event)
+        if (swallow) {
+            if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) swallow = false
+            return true
+        }
         return super.onTouchEvent(event)
     }
 

@@ -195,4 +195,81 @@ class OcrMergeTest {
         ))
         assertEquals(2, below.size)
     }
+
+    // ---- regroup (exact ML Kit symbol boxes from scripts/tmp/ocrprobe/symbols.txt, Japanese recognizer) ----
+
+    private fun ch(t: String, l: Int, tp: Int, r: Int, b: Int) = OcrChar(t, Box(l, tp, r, b))
+
+    /** One ML Kit line as a candidate (its own TextBlock), boxes as measured. */
+    private fun line(text: String, box: Box, chars: List<OcrChar>) = ocrCandidate(listOf(text), listOf(box), box, 0.9f, chars)
+
+    // the 3-column vertical bubble 「パパが見て／いいのは／こっち♥」 that ML Kit read row-wise
+    private val rowWise = listOf(
+        ch("こ", 50, 811, 125, 859), ch("い", 125, 811, 181, 859), ch("パ", 181, 811, 217, 859),
+        ch("つ", 48, 868, 126, 910), ch("い", 126, 868, 174, 910), ch("パ", 174, 868, 212, 910),
+        ch("ち", 62, 918, 96, 962), ch("の", 110, 917, 150, 961), ch("が", 162, 916, 203, 960),
+        ch("V", 53, 970, 129, 1019), ch("は", 129, 970, 176, 1019), ch("見", 176, 970, 205, 1019),
+        ch("て", 166, 1027, 201, 1064),
+    )
+
+    @Test
+    fun rowWiseBubbleRegroupedAsColumnsRightToLeft() {
+        val (text, lines) = regroup(rowWise, vertical = true)
+        assertEquals("パパが見て\nいいのは\nこつちV", text)
+        assertEquals(3, lines.size)
+        assertTrue(lines[0].left > lines[1].left && lines[1].left > lines[2].left)
+    }
+
+    @Test
+    fun rowWiseBubbleRegroupedHorizontalKeepsRowOrder() {
+        assertEquals("こいパ\nついパ\nちのが\nVは見\nて", regroup(rowWise, vertical = false).first)
+    }
+
+    @Test
+    fun rowWiseFragmentsOverVerticalColumnFoldedInWithoutDuplicates() {
+        val column = line("あるから...", Box(92, 1657, 144, 1904), listOf(
+            ch("あ", 93, 1657, 137, 1701), ch("る", 94, 1710, 138, 1750), ch("か", 96, 1760, 140, 1800),
+            ch("ら", 98, 1810, 142, 1851), ch(".", 100, 1862, 143, 1870), ch(".", 100, 1879, 143, 1887),
+            ch(".", 101, 1896, 144, 1904),
+        ))
+        val f1 = line("あ話", Box(102, 1658, 195, 1703), listOf(ch("あ", 102, 1658, 141, 1703), ch("話", 149, 1658, 195, 1703)))
+        val f2 = line("るが", Box(104, 1708, 194, 1752), listOf(ch("る", 104, 1708, 160, 1752), ch("が", 160, 1708, 194, 1752)))
+        assertTrue(column.vertical)
+        assertFalse(f1.vertical || f2.vertical)
+        val out = mergeOcr(listOf(column, f1, f2))
+        assertEquals(1, out.size)
+        assertTrue(out[0].vertical)
+        assertEquals("話が\nあるから...", out[0].text)
+        assertEquals(Box(92, 1657, 195, 1904), out[0].box)
+    }
+
+    @Test
+    fun flipPullsInLoneNeighbourButNotPanelTitle() {
+        // paragraphs as merged on the device (scripts/tmp/ocrprobe/merged_after.txt), boxes from symbols.txt
+        val bubble = rowWise.dropLast(1)
+        val te = rowWise.takeLast(1)
+        val title = listOf(
+            ch("が", 68, 1202, 136, 1257), ch("チ", 136, 1202, 183, 1257), ch("嫉", 183, 1202, 236, 1257),
+            ch("妬", 236, 1202, 314, 1257), ch("さ", 314, 1202, 388, 1257), ch("ん", 388, 1202, 435, 1257),
+            ch(")", 435, 1202, 468, 1257),
+        )
+        val boxes = listOf(Box(48, 811, 217, 1019), Box(166, 1027, 201, 1064), Box(68, 1202, 468, 1257))
+        val texts = listOf("こいパ\nついパ\nちのが\nVは見", "て", "がチ嫉妬さん)")
+        val chars = listOf(bubble, te, title)
+        val absorbed = flipNeighbours(0, boxes, texts, bubble)
+        assertEquals(listOf(1), absorbed)
+        assertEquals("パパが見て\nいいのは\nこつちV", regroup(bubble + absorbed.flatMap { chars[it] }, vertical = true).first)
+    }
+
+    @Test
+    fun horizontalCjkParagraphWithoutVerticalNeighbourUnchanged() {
+        val chars = listOf(
+            ch("第", 100, 100, 120, 120), ch("一", 120, 100, 140, 120), ch("行", 140, 100, 160, 120),
+            ch("第", 100, 126, 120, 146), ch("二", 120, 126, 140, 146), ch("行", 140, 126, 160, 146),
+        )
+        val para = ocrCandidate(listOf("第一行", "第二行"), listOf(Box(100, 100, 160, 120), Box(100, 126, 160, 146)), Box(100, 100, 160, 146), 0.9f, chars)
+        val farColumn = v("一一一一一", 600, 100, 5)
+        assertFalse(para.vertical)
+        assertEquals(listOf(para, farColumn), mergeOcr(listOf(para, farColumn)))
+    }
 }

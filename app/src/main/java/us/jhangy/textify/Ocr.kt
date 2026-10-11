@@ -16,12 +16,15 @@ import com.google.mlkit.vision.text.korean.KoreanTextRecognizerOptions
 /**
  * One recognised paragraph (ML Kit TextBlock). [text] = its lines joined with "\n"; [box] and the per-line
  * [lines] (top to bottom) are in screenshot (bitmap) pixels. [vertical] = CJK text set top-to-bottom, columns right-to-left.
+ * [chars] = its characters, so the paragraph can be re-read in the other orientation ([regroup]).
  */
-data class OcrBlock(val text: String, val box: Rect, val lines: List<Rect>, val vertical: Boolean = false)
+data class OcrBlock(
+    val text: String, val box: Rect, val lines: List<Rect>, val vertical: Boolean = false, val chars: List<OcrChar> = emptyList(),
+)
 
 internal fun Rect.toBox(): Box = Box(left, top, right, bottom)
 
-private fun Box.toRect(): Rect = Rect(left, top, right, bottom)
+internal fun Box.toRect(): Rect = Rect(left, top, right, bottom)
 
 /** On-device OCR. Every selected script model runs fully offline, all in parallel on the same image. */
 object Ocr {
@@ -44,7 +47,7 @@ object Ocr {
             parts[i] = found
             if (--pending == 0) {
                 onResult(mergeOcr(parts.flatMap { it.orEmpty() })
-                    .map { c -> OcrBlock(c.text, c.box.toRect(), c.lines.map { it.toRect() }, c.vertical) })
+                    .map { c -> OcrBlock(c.text, c.box.toRect(), c.lines.map { it.toRect() }, c.vertical, c.chars) })
             }
         }
         scripts.forEachIndexed { i, script ->
@@ -67,7 +70,10 @@ object Ocr {
         Script.KOREAN -> TextRecognition.getClient(KoreanTextRecognizerOptions.Builder().build())
     }
 
-    /** Translation spec §1: one candidate per TextBlock; blank or box-less lines dropped; confidence = mean line confidence; orientation by [isVertical]. */
+    /**
+     * Translation spec §1: one candidate per TextBlock; blank or box-less lines dropped; confidence = mean line confidence;
+     * orientation by [isVertical]; characters = the lines' Text.Symbols with a box.
+     */
     private fun candidates(result: Text): List<OcrCandidate> = result.textBlocks.mapNotNull { block ->
         val lines = block.lines.filter { it.boundingBox != null && it.text.isNotBlank() }
         if (lines.isEmpty()) return@mapNotNull null
@@ -75,6 +81,8 @@ object Ocr {
         val box = block.boundingBox?.toBox() ?: Box(
             boxes.minOf { it.left }, boxes.minOf { it.top }, boxes.maxOf { it.right }, boxes.maxOf { it.bottom },
         )
-        ocrCandidate(lines.map { it.text }, boxes, box, paragraphConfidence(lines.map { it.confidence }))
+        val chars = lines.flatMap { l -> l.elements.flatMap { it.symbols } }
+            .mapNotNull { s -> s.boundingBox?.let { OcrChar(s.text, it.toBox()) } }
+        ocrCandidate(lines.map { it.text }, boxes, box, paragraphConfidence(lines.map { it.confidence }), chars)
     }
 }
