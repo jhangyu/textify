@@ -9,7 +9,7 @@
 **Tech Stack:** Kotlin 2.2.0, AGP 8.13.2, compileSdk 36, minSdk 26, targetSdk 36, androidx core-ktx 1.13.1, appcompat 1.7.0, ViewBinding, ML Kit text-recognition 16.0.1. New: `com.google.mlkit:translate:17.0.3`, `com.google.mlkit:language-id:17.0.6`, `com.github.houbb:opencc4j:1.14.0` (versions and APIs verified, see Global Constraints).
 
 **Decisions (hard-to-reverse only):**
-- APK size. Alternatives: (a) keep all four ABIs as today, (b) `abiFilters` arm64-v8a(+armeabi-v7a), (c) `useLegacyPackaging = true` (compressed `.so`). **Chosen: (a), unchanged packaging** — this plan does not decide a packaging change; it is flagged to the user. Drivers: x86/x86_64 emulators keep working; packaging is outside the spec. Drawback (measured from the registry artifacts): `translate-17.0.3.aar` carries `libtranslate_jni.so` of 11.6 / 16.4 / 17.3 / 17.4 MB (armeabi-v7a / arm64 / x86 / x86_64, 62.6 MB total, stored uncompressed by AGP for minSdk ≥ 23), `language-id-17.0.6` adds ≈ 4.7 MB of `.so`, OpenCC adds 2.86 MB of jars. The current debug APK is 48.98 MB (41.0 MB of it OCR `.so`), so the APK grows to roughly 118 MB.
+- APK size. Alternatives: (a) keep all four ABIs as today, (b) `abiFilters` arm64-v8a(+armeabi-v7a), (c) `useLegacyPackaging = true` (compressed `.so`). **Chosen by the user: `abiFilters` arm64-v8a only** (Task 4 Step 1b). Drawback: no x86 emulators, no 32-bit-only phones. Size context (measured from the registry artifacts): `translate-17.0.3.aar` carries `libtranslate_jni.so` of 11.6 / 16.4 / 17.3 / 17.4 MB (armeabi-v7a / arm64 / x86 / x86_64, 62.6 MB total, stored uncompressed by AGP for minSdk ≥ 23), `language-id-17.0.6` adds ≈ 4.7 MB of `.so`, OpenCC adds 2.86 MB of jars. The current debug APK is 48.98 MB (41.0 MB of it OCR `.so`), so the APK grows to roughly 118 MB.
 - OpenCC port. Alternatives: OpenCC C++ via JNI, ML Kit `zh` only (Simplified), **opencc4j 1.14.0 (chosen)**. Drivers: pure Java so the conversion runs in JVM unit tests; s2twp-equivalent `ZhTwConverterUtil.toTraditional` verified on the JVM against the registry jar (`使用互联网`→`使用網際網路`, `软件和内存`→`軟體和記憶體`, already-Traditional text unchanged, `\n` kept). Size: opencc4j 0.56 MB + heaven 0.33 MB + nlp-common 1.97 MB = 2.86 MB compressed (< 5 MB budget); `jieba-analysis` is `<optional>` and is not pulled. Drawback: it loads ≈ 7 MB of dictionaries into memory on first use (runs off the main thread); Android compatibility is checked on device in Task 7.
 - One view per paragraph. Alternatives: separate translated-card view stacked over `PillView`, **`PillView` with an original and a translated mode (chosen)**. Driver: tap / long-press selection / ActionMode / copy flash already live in `PillView`; mockup note 2 also specifies one view with two layers. Drawback: `PillView` grows; card painting is split into `TranslatedCard.kt` to keep it readable.
 - Glow and blur. Alternatives: `setShadowLayer` / `RenderEffect` (mockup notes, API-gated), **software glow bitmaps from `Glow.kt` (chosen)**. Driver: final pick "one implementation for API 26+". Drawback: one small bitmap per glowing element, rebuilt on size change. The bottom panel is opaque 96 % white with no blur.
@@ -1267,6 +1267,7 @@ git status --porcelain -- app/build.gradle.kts app/src/main/java/us/jhangy/texti
 - [ ] `grep -rln "com.google.mlkit.nl" app/src/main/java` prints only `app/src/main/java/us/jhangy/textify/Translate.kt`.
 - [ ] `grep -cE "android.permission.(INTERNET|ACCESS_NETWORK_STATE)" app/src/main/AndroidManifest.xml` prints `2`.
 - [ ] `grep -nE "mlkit:translate:17.0.3|mlkit:language-id:17.0.6" app/build.gradle.kts` prints two lines.
+- [ ] `grep -n 'abiFilters += "arm64-v8a"' app/build.gradle.kts` prints one line; after the gate, `unzip -l app/build/outputs/apk/debug/app-debug.apk | grep -c "lib/arm64-v8a/"` is non-zero and `unzip -l app/build/outputs/apk/debug/app-debug.apk | grep -cE "lib/(x86|x86_64|armeabi-v7a)/"` prints `0`. Report the APK size.
 - [ ] `grep -c "offline after a one-time model download" README.md` prints `1`; `grep -c "fully offline" README.md` prints `1` (only the OCR sentence).
 
 
@@ -1282,6 +1283,14 @@ git status --porcelain -- app/build.gradle.kts app/src/main/java/us/jhangy/texti
     // RemoteModelManager) + bundled language identification. Google Maven latest, verified 2026-10-11.
     implementation("com.google.mlkit:translate:17.0.3")
     implementation("com.google.mlkit:language-id:17.0.6")
+```
+
+- [ ] **Step 1b: Package arm64 only (user decision)** — in `app/build.gradle.kts` `defaultConfig`, after `versionName = "0.2"`, add:
+
+```kotlin
+        // ponytail: arm64 only (user decision 2026-10-11) — the ML Kit .so libs would otherwise ship 4 ABIs (~118 MB APK).
+        // Drops x86 emulators and 32-bit-only phones; add "armeabi-v7a" back if one of those is needed.
+        ndk { abiFilters += "arm64-v8a" }
 ```
 
 - [ ] **Step 2: Add the permissions** — in `app/src/main/AndroidManifest.xml`, after `<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />`, add:
