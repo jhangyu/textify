@@ -37,6 +37,7 @@ class LlmModelsTest {
         assertEquals(listOf("hymt", "gemma", "qwen"), MODELS.map { it.key })
         assertEquals(2_588_147_712L, modelOf("gemma").size)
         assertEquals(971_293_456L, modelOf("qwen").size)
+        assertEquals(listOf("qwen"), MODELS.filter { it.fp32Activations }.map { it.key })   // only Qwen needs fp32 GPU activations
     }
 
     @Test

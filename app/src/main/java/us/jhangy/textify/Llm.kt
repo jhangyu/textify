@@ -3,6 +3,7 @@ package us.jhangy.textify
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import com.google.ai.edge.litertlm.ActivationDataType
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Engine
@@ -181,7 +182,8 @@ object Llm {
         val e = engine ?: try {
             val file = modelFile(app, m)
             if (!file.isFile) return null
-            Engine(EngineConfig(modelPath = file.path, backend = Backend.GPU(), cacheDir = app.cacheDir.path))
+            val act = if (m.fp32Activations) ActivationDataType.FLOAT32 else null   // null = runtime default
+            Engine(EngineConfig(modelPath = file.path, backend = Backend.GPU(), cacheDir = app.cacheDir.path, activationDataType = act))
                 .also { it.initialize() }
         } catch (t: Throwable) {                          // includes UnsatisfiedLinkError when OpenCL is missing
             slot(m).gpuFailed = true
