@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- icon-2 Halo Orb foreground: frosted disc + violet scan glyph (ring removed) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:pathData="M54,23a31,31 0 1,1 0,62a31,31 0 1,1 0,-62Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="radial" android:centerX="54" android:centerY="56" android:gradientRadius="31">
+                <item android:offset="0" android:color="#247C3AED" />
+                <item android:offset="0.82" android:color="#247C3AED" />
+                <item android:offset="1" android:color="#007C3AED" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:pathData="M54,27a27,27 0 1,1 0,54a27,27 0 1,1 0,-54Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="radial" android:centerX="54" android:centerY="44" android:gradientRadius="34">
+                <item android:offset="0.55" android:color="#FFFFFFFF" />
+                <item android:offset="1" android:color="#FFF3EDFF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <group android:translateX="33" android:translateY="33" android:scaleX="1.75" android:scaleY="1.75">
+        <path
+            android:pathData="M4,8V6a2,2 0,0 1,2 -2h2M16,4h2a2,2 0,0 1,2 2v2M20,16v2a2,2 0,0 1,-2 2h-2M8,20H6a2,2 0,0 1,-2 -2v-2M8.5,9h7M12,9v7"
+            android:fillColor="#00000000"
+            android:strokeColor="#7C3AED"
+            android:strokeWidth="2.2"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+    </group>
+</vector>
