@@ -13,6 +13,9 @@ android {
         targetSdk = 36
         versionCode = 2
         versionName = "0.2"
+        // ponytail: arm64 only (user decision 2026-10-11) — the ML Kit .so libs would otherwise ship 4 ABIs (~118 MB APK).
+        // Drops x86 emulators and 32-bit-only phones; add "armeabi-v7a" back if one of those is needed.
+        ndk { abiFilters += "arm64-v8a" }
     }
 
     // Release signing is configured only when the keystore properties exist (~/.gradle/gradle.properties).
@@ -62,6 +65,11 @@ dependencies {
     // Traditional Chinese output (translation spec decision 7): OpenCC s2twp via the pure-Java opencc4j port.
     // 1.14.0 = Maven Central latest (2025-09-05); pulls heaven 0.13.0 + nlp-common 0.0.5 (~2.9 MB), jieba stays optional.
     implementation("com.github.houbb:opencc4j:1.14.0")
+
+    // On-device translation (translation spec §2): ML Kit translate (models downloaded on demand through
+    // RemoteModelManager) + bundled language identification. Google Maven latest, verified 2026-10-11.
+    implementation("com.google.mlkit:translate:17.0.3")
+    implementation("com.google.mlkit:language-id:17.0.6")
 
     testImplementation("junit:junit:4.13.2")
 }

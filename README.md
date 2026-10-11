@@ -4,6 +4,7 @@ Vendor-independent on-screen text extraction for Android. A floating bubble
 captures the current screen via MediaProjection and runs on-device OCR
 (Google ML Kit) — no root, no system UID, no vendor framework. Works on any
 Android 8+ device.
+Recognised paragraphs can also be translated on device (Google ML Kit translation + OpenCC).
 
 ## How it works
 1. Launching Textify opens `MainActivity`, which only routes: if the bubble is already
@@ -29,10 +30,19 @@ Android 8+ device.
 Multi-select, at least one: Chinese (Traditional and Simplified), Japanese, Korean —
 chosen in Settings. Every model also reads Latin/English. All selected models run in
 parallel on the same screenshot; where two paragraphs overlap (IoU > 0.5) the higher-confidence
-one is kept (`OcrMerge.kt`). All run fully offline. See `Ocr.kt`.
+one is kept (`OcrMerge.kt`). OCR runs fully offline; translation runs offline after a one-time model download (see Translation). See `Ocr.kt`.
 `// ponytail:` ML Kit picks its own compute backend (CPU/GPU via NNAPI); it
 exposes no NPU/int4 control. Upgrade path if speed matters: swap in a
 LiteRT int4 model with a hardware delegate.
+
+## Translation
+The translate button next to the settings button (shown once OCR found text) replaces every
+paragraph in place with its translation into the target language chosen in Settings (default
+繁體中文); press it again for the original. Each paragraph's language is detected on device
+(ML Kit language identification). Chinese paragraphs with target 繁體中文 only go through OpenCC
+(s2twp, `opencc4j`); other languages go through ML Kit translation (plus OpenCC for 繁體中文).
+Language models (~30 MB each) download automatically on first use, optionally only on Wi-Fi;
+Settings lists, pre-downloads and deletes them. Rules: `TranslateRules.kt`; engine: `Translate.kt`.
 
 ## Build
 Needs JDK 17 or 21 (not 25), Android SDK with platform 36.
@@ -43,6 +53,6 @@ JAVA_HOME=/opt/homebrew/opt/openjdk@21 ./gradlew assembleDebug
 `local.properties` must point `sdk.dir` at your Android SDK.
 
 ## Stack
-AGP 8.13.2, Gradle 8.14.6, Kotlin 2.2.0, ML Kit text-recognition 16.0.1.
+AGP 8.13.2, Gradle 8.14.6, Kotlin 2.2.0, ML Kit text-recognition 16.0.1, ML Kit translate 17.0.3, language-id 17.0.6, opencc4j 1.14.0.
 AGP 9.x + latest androidx were tried but 9.x's built-in Kotlin plugin conflicts
 with the standard kotlin-android plugin; pinned to the proven 8.13 line.
