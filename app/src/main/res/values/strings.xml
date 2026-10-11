@@ -88,4 +88,11 @@
     <string name="sheet_done">已下載</string>
     <string name="sheet_downloading">下載中</string>
     <string name="session_translate">翻譯</string>
+    <string name="panel_title">完整譯文</string>
+    <string name="panel_original">原文</string>
+    <string name="panel_translation">譯文</string>
+    <string name="panel_copy_original">複製原文</string>
+    <string name="panel_copy_translation">複製譯文</string>
+    <string name="panel_copied">已複製</string>
+    <string name="panel_lang">%1$s → %2$s</string>
 </resources>

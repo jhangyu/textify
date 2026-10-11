@@ -67,6 +67,7 @@ class SessionActivity : AppCompatActivity() {
     private val cardColors = HashMap<Int, Int>()
     private var translating = false           // translation mode on (button on or busy)
     private val runs = ArrayList<TranslateRun>()
+    private lateinit var panel: TranslationPanel
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -96,9 +97,14 @@ class SessionActivity : AppCompatActivity() {
         b.settings.setOnClickListener { openSettings() }
         b.trBtn.setOnClickListener { toggleTranslation() }
         b.pills.setOnClickListener { actionMode?.finish() }   // empty space never closes; it only drops a selection
+        panel = TranslationPanel(b, ::putClip)
         onBackPressedDispatcher.addCallback(this) {
             val mode = actionMode
-            if (mode != null) mode.finish() else close()
+            when {
+                panel.isOpen -> panel.close()          // spec §3: back closes the panel first
+                mode != null -> mode.finish()
+                else -> close()
+            }
         }
 
         b.hintOrb.setImageDrawable(orb(dim = true))
@@ -180,9 +186,17 @@ class SessionActivity : AppCompatActivity() {
         val shown = pill.translationText
         when {
             dismissOnly -> actionMode?.finish()
+            pill.showsTranslation && pill.truncated -> openPanel(i, pill)   // spec §3: truncated box opens the panel
             pill.showsTranslation && shown != null -> copyText(pill, shown)
             else -> copyText(pill, blocks[i].text)
         }
+    }
+
+    /** Panel header "source → target" (e.g. 英文 → 繁體中文), original paragraph and full translation. */
+    private fun openPanel(i: Int, pill: PillView) {
+        val done = states[i] as? ParagraphState.Done ?: return
+        val label = getString(R.string.panel_lang, Languages.zhName(done.source), Languages.targetTitle(Prefs.target(this).key))
+        panel.open(pill, blocks[i].text, done.text, label)
     }
 
     private fun selectionCallback(pill: PillView) = object : ActionMode.Callback {
@@ -229,6 +243,7 @@ class SessionActivity : AppCompatActivity() {
     private fun toggleTranslation() {
         if (closing || pills.isEmpty()) return
         actionMode?.finish()
+        panel.close()
         translating = !translating
         if (translating) startRun()
         tide(translating)
