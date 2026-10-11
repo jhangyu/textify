@@ -65,4 +65,8 @@
     <string name="speed_slower">稍慢</string>
     <string name="speed_desc_one">只跑 1 個辨識模型，結果最快出現。</string>
     <string name="speed_desc_many">%1$d 個模型同時辨識同一張截圖；語言越多，辨識稍慢。</string>
+    <string name="chip_downloading">下載中…</string>
+    <string name="chip_waiting_wifi">等待 Wi-Fi</string>
+    <string name="chip_unsupported">不支援此語言</string>
+    <string name="chip_failed">翻譯失敗</string>
 </resources>
