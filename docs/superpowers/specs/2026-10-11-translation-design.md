@@ -1,6 +1,6 @@
 # On-device translation + paragraph OCR — design
 
-Status: design approved; mockup phase next (two proposals, see "Mockup phase"), then implementation plan.
+Status: design approved; mockup picked (`docs/design/mockups/translation/proposal-2-prism-tide.html`); implementation plan next.
 
 ## Decisions (user)
 1. Engine: ML Kit on-device translation (`com.google.mlkit:translate`). Language models (~30 MB each) are
@@ -136,3 +136,17 @@ language, Wi-Fi switch, model list states, pre-download). Each follows the skill
 approved mockups `docs/design/mockups/a2-halo.html` (session) and
 `docs/design/mockups/settings/settings-final.html` (settings). Output: `docs/design/mockups/translation/`.
 The user picks (or mixes) before the implementation plan is written.
+
+## Final picks (user, after mockups)
+- Visual direction: `docs/design/mockups/translation/proposal-2-prism-tide.html` ("Prism Tide"). Its header comment
+  (palette, timings, Android notes) is the visual source of truth for sections 3 and 4.
+- Chinese paragraphs when the target is 繁體中文: if the OpenCC output equals the input, the paragraph is
+  `NotNeeded` (keeps the original look). Only changed text becomes a translated box.
+- Truncation: custom "⋯" mark over a short fade in the box colour (as in `proposal-1-quiet-reprint.html`), not the
+  system ellipsis.
+- Deleting a model in Settings: no confirmation dialog.
+- Translate button spins only while paragraphs are `Translating`. While models download it shows "on"; the
+  per-paragraph 下載中… chips report the download.
+- One implementation for API 26+, no per-API branches (project policy): box glow must use a technique that works
+  on every supported API level (e.g. drawing it in software), and the bottom panel uses the opaque 96% white
+  look with no RenderEffect blur.
