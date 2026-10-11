@@ -1,4 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- a2 .bub: radial-gradient at 50% 38%, white 55% to lavender on a 56dp disc -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
-    <solid android:color="#3F6FFF" />
+    <gradient
+        android:type="radial"
+        android:centerX="0.5"
+        android:centerY="0.38"
+        android:gradientRadius="45dp"
+        android:startColor="#FFFFFF"
+        android:centerColor="#FFFFFF"
+        android:endColor="#F3EDFF" />
 </shape>
