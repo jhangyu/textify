@@ -78,10 +78,12 @@
     <string name="tr_models">語言模型</string>
     <string name="tr_models_hint">每次開啟設定時向系統查詢</string>
     <string name="tr_predownload">預先下載語言</string>
-    <string name="tr_note">Hy-MT2（約 1.83 GB）為主要翻譯；其餘語言模型（每個約 30MB）為備援，下載後可離線翻譯</string>
-    <string name="hymt_sub">主要翻譯 · 約 1.83 GB</string>
-    <string name="hymt_downloading">下載中 %1$d%%</string>
-    <string name="hymt_done_sub">主要翻譯 · 已下載</string>
+    <string name="tr_note">點選一個大型模型作為主要翻譯（首次翻譯時自動下載，約 2 GB）；其餘語言模型（每個約 30MB）為備援，下載後可離線翻譯</string>
+    <string name="llm_size">約 %1$s GB</string>
+    <string name="llm_downloading">下載中 %1$d%%</string>
+    <string name="llm_done">已下載</string>
+    <string name="llm_unpinned">尚未提供</string>
+    <string name="llm_active">主要翻譯 · %1$s</string>
     <string name="model_builtin">內建</string>
     <string name="model_builtin_sub">隨 App 內建，無法刪除</string>
     <string name="model_done_sub">已下載 · 可離線翻譯</string>

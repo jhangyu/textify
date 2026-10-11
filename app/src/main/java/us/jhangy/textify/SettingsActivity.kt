@@ -35,6 +35,7 @@ import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import androidx.core.view.isVisible
 import androidx.core.view.updatePadding
 import us.jhangy.textify.databinding.ActivitySettingsBinding
+import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
@@ -95,7 +96,7 @@ class SettingsActivity : AppCompatActivity() {
         b.demo.resume()                             // no-op while denied
         main.postDelayed(recheck, RECHECK)
         Translate.onModelsChanged = { refreshModels() }   // a session download may finish while Settings is open
-        HyMt.onChanged = { onHyMtChanged() }
+        Llm.onChanged = { onLlmChanged() }
         refreshModels()                                    // spec §4: query ML Kit every time Settings opens
         b.trPreview.resume()
     }
@@ -104,7 +105,7 @@ class SettingsActivity : AppCompatActivity() {
         main.removeCallbacks(recheck)
         b.demo.pause()
         Translate.onModelsChanged = null
-        HyMt.onChanged = null
+        Llm.onChanged = null
         b.trPreview.pause()
         super.onPause()
     }
@@ -289,7 +290,7 @@ class SettingsActivity : AppCompatActivity() {
             showWifi(animate = true)
             if (!wifiOnly) {                                  // Wi-Fi-only off: retry what waited for Wi-Fi
                 Translate.waitingWifi.forEach { Translate.download(this, it) }
-                if (HyMt.waitingWifi) HyMt.download(this)
+                MODELS.forEach { if (Llm.waitingWifi(it)) Llm.download(this, it) }
                 refreshModels()
             }
         }
@@ -330,10 +331,10 @@ class SettingsActivity : AppCompatActivity() {
     private fun renderModels(rows: List<Pair<String, ModelState>>) {
         val next = rows.toMap()
         val well = b.modelWell
-        for (i in well.childCount - 1 downTo 0) if (well.getChildAt(i).tag.let { it != HYMT && it !in next }) well.removeViewAt(i)
-        renderHyMt()
+        for (i in well.childCount - 1 downTo 0) if (well.getChildAt(i).tag.let { it !is LlmTag && it !in next }) well.removeViewAt(i)
+        renderLlms()
         rows.forEachIndexed { rowIndex, (code, state) ->
-            val index = rowIndex + 1                          // Hy-MT2 row is first
+            val index = rowIndex + MODELS.size                // LLM rows come first
             val existing = (0 until well.childCount).map { well.getChildAt(it) }.firstOrNull { it.tag == code }
             if (existing == null) {
                 well.addView(modelRow(code, state), index)
@@ -351,85 +352,109 @@ class SettingsActivity : AppCompatActivity() {
         lastRows = next
     }
 
-    private enum class HyState { IDLE, DOWNLOADING, WAITING_WIFI, DONE }
+    private enum class LlmState { UNPINNED, IDLE, DOWNLOADING, WAITING_WIFI, DONE }
 
-    private var lastHy: HyState? = null
-    private var hySub: TextView? = null
+    /** Tag of an LLM row in the well (never equal to an ML Kit code tag). */
+    private data class LlmTag(val key: String)
 
-    private fun hyState() = when {
-        HyMt.isDownloaded(this) -> HyState.DONE
-        HyMt.downloading -> HyState.DOWNLOADING
-        HyMt.waitingWifi -> HyState.WAITING_WIFI
-        else -> HyState.IDLE
+    /** Last rendered (state, active) per model key; sub label per key for in-place progress updates. */
+    private val lastLlm = HashMap<String, Pair<LlmState, Boolean>>()
+    private val llmSub = HashMap<String, TextView>()
+
+    private fun llmState(m: ModelSpec) = when {
+        !m.pinned -> LlmState.UNPINNED
+        Llm.isDownloaded(this, m) -> LlmState.DONE
+        Llm.downloading(m) -> LlmState.DOWNLOADING
+        Llm.waitingWifi(m) -> LlmState.WAITING_WIFI
+        else -> LlmState.IDLE
     }
 
-    private fun hySubText(state: HyState) = when (state) {
-        HyState.IDLE -> getString(R.string.hymt_sub)
-        HyState.DOWNLOADING -> getString(R.string.hymt_downloading, (HyMt.progress * 100).toInt())
-        HyState.WAITING_WIFI -> getString(R.string.chip_waiting_wifi)
-        HyState.DONE -> getString(R.string.hymt_done_sub)
+    private fun llmSubText(m: ModelSpec, state: LlmState, active: Boolean): String {
+        val text = when (state) {
+            LlmState.UNPINNED -> getString(R.string.llm_unpinned)
+            LlmState.IDLE -> getString(R.string.llm_size, String.format(Locale.US, "%.2f", m.size / 1e9))
+            LlmState.DOWNLOADING -> getString(R.string.llm_downloading, (Llm.progress(m) * 100).toInt())
+            LlmState.WAITING_WIFI -> getString(R.string.chip_waiting_wifi)
+            LlmState.DONE -> getString(R.string.llm_done)
+        }
+        return if (active) getString(R.string.llm_active, text) else text
     }
 
-    /** HyMt state or progress changed: re-render on a state change, else only update the % text. */
-    private fun onHyMtChanged() {
-        val state = hyState()
-        if (state != lastHy) renderHyMt() else if (state == HyState.DOWNLOADING) hySub?.text = hySubText(state)
+    /** Llm state or progress changed: re-render rows whose state changed, else only update the % text. */
+    private fun onLlmChanged() {
+        renderLlms()
+        val active = Prefs.activeModel(this)
+        for (m in MODELS) if (llmState(m) == LlmState.DOWNLOADING) llmSub[m.key]?.text = llmSubText(m, LlmState.DOWNLOADING, m == active)
     }
 
-    /** Keeps the single Hy-MT2 row at index 0 of the well in sync with HyMt (same swap / sparkle as the ML Kit rows). */
-    private fun renderHyMt() {
-        val state = hyState()
-        if (state == lastHy) return
+    /** Keeps one row per LLM at the top of the well in sync with Llm and the active choice (same swap / sparkle as the ML Kit rows). */
+    private fun renderLlms() {
+        val active = Prefs.activeModel(this)
         val well = b.modelWell
-        val existing = (0 until well.childCount).map { well.getChildAt(it) }.firstOrNull { it.tag == HYMT }
-        val row = hymtRow(state)
-        val transition = well.layoutTransition
-        if (existing != null) { well.layoutTransition = null; well.removeView(existing) }
-        well.addView(row, 0)
-        well.layoutTransition = transition
-        if (lastHy == HyState.DOWNLOADING && state == HyState.DONE) sparkle(row)
-        lastHy = state
+        MODELS.forEachIndexed { index, m ->
+            val now = llmState(m) to (m == active)
+            val last = lastLlm[m.key]
+            if (now == last) return@forEachIndexed
+            val existing = (0 until well.childCount).map { well.getChildAt(it) }.firstOrNull { it.tag == LlmTag(m.key) }
+            val row = llmRow(m, now.first, now.second)
+            val transition = well.layoutTransition
+            if (existing != null) { well.layoutTransition = null; well.removeView(existing) }
+            well.addView(row, index)
+            well.layoutTransition = transition
+            if (last?.first == LlmState.DOWNLOADING && now.first == LlmState.DONE) sparkle(row)
+            lastLlm[m.key] = now
+        }
     }
 
-    private fun hymtRow(state: HyState): View {
-        val waiting = state == HyState.WAITING_WIFI
+    /** Tap = make [m] the active translator (and start its download if needed); the trash button deletes it. */
+    private fun pickLlm(m: ModelSpec) {
+        if (Prefs.activeModel(this) != m) {
+            Prefs.setActiveModel(this, m.key)
+            Llm.release()                                   // one engine at a time: free the previous model now
+        }
+        Llm.download(this, m)                               // no-op when downloaded or running; re-checks the network
+        renderLlms()
+    }
+
+    private fun llmRow(m: ModelSpec, state: LlmState, active: Boolean): View {
+        val grey = state == LlmState.WAITING_WIFI || state == LlmState.UNPINNED
         val row = LinearLayout(this).apply {
-            tag = HYMT
+            tag = LlmTag(m.key)
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPaddingRelative(px(10f), 0, px(4f), 0)
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(60f))
+            if (active) background = round(withAlpha(0.10f, 0x7C3AED), 14 * d)
         }
-        row.addView(disc("Hy", 14f, waiting), LinearLayout.LayoutParams(px(38f), px(38f)))
+        row.addView(disc(m.glyph, 14f, grey), LinearLayout.LayoutParams(px(38f), px(38f)))
         val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val titleRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = true }
-        titleRow.addView(label("Hy-MT2", 15f, true, if (waiting) GREY else INK))
-        titleRow.addView(label("1.8B", 12f, true, if (waiting) GREY else SECONDARY).apply { setPaddingRelative(px(6f), 0, 0, 0) })
+        titleRow.addView(label(m.title, 15f, true, if (grey) GREY else INK))
+        titleRow.addView(label(m.badge, 12f, true, if (grey) GREY else SECONDARY).apply { setPaddingRelative(px(6f), 0, 0, 0) })
         texts.addView(titleRow)
-        val subColor = when (state) { HyState.DOWNLOADING -> VIOLET; HyState.WAITING_WIFI -> GREY; else -> SECONDARY }
-        hySub = label(hySubText(state), 12.5f, state == HyState.DOWNLOADING, subColor).also { texts.addView(it) }
+        val subColor = when { state == LlmState.DOWNLOADING || active -> VIOLET; grey -> GREY; else -> SECONDARY }
+        llmSub[m.key] = label(llmSubText(m, state, active), 12.5f, state == LlmState.DOWNLOADING || active, subColor).also { texts.addView(it) }
         row.addView(texts, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = px(12f) })
         row.addView(FrameLayout(this).apply {
             layoutParams = LinearLayout.LayoutParams(px(44f), px(44f))
             when (state) {
-                HyState.DONE -> {
+                LlmState.DONE -> {
                     background = pressed(oval(withAlpha(0.16f, 0xF472B6)), null)
-                    contentDescription = getString(R.string.model_delete, "Hy-MT2")
+                    contentDescription = getString(R.string.model_delete, m.title)
                     isClickable = true
                     isFocusable = true
                     addView(ImageView(context).apply { setImageResource(R.drawable.ic_trash) }, FrameLayout.LayoutParams(px(20f), px(20f), Gravity.CENTER))
-                    setOnClickListener { HyMt.delete(this@SettingsActivity); renderHyMt() }
+                    setOnClickListener { Llm.delete(this@SettingsActivity, m); renderLlms() }
                 }
-                HyState.DOWNLOADING -> addView(SpinnerRingView(context).apply { strokePx = 3 * d }, FrameLayout.LayoutParams(px(22f), px(22f), Gravity.CENTER))
-                HyState.WAITING_WIFI -> addView(ImageView(context).apply { setImageResource(R.drawable.ic_chip_wifi); setColorFilter(GREY) },
+                LlmState.DOWNLOADING -> addView(SpinnerRingView(context).apply { strokePx = 3 * d }, FrameLayout.LayoutParams(px(22f), px(22f), Gravity.CENTER))
+                LlmState.WAITING_WIFI -> addView(ImageView(context).apply { setImageResource(R.drawable.ic_chip_wifi); setColorFilter(GREY) },
                     FrameLayout.LayoutParams(px(20f), px(20f), Gravity.CENTER))
-                HyState.IDLE -> addView(ImageView(context).apply { setImageResource(R.drawable.ic_download); setColorFilter(VIOLET) },
+                LlmState.IDLE -> addView(ImageView(context).apply { setImageResource(R.drawable.ic_download); setColorFilter(VIOLET) },
                     FrameLayout.LayoutParams(px(20f), px(20f), Gravity.CENTER))
+                LlmState.UNPINNED -> Unit
             }
         })
-        if (state == HyState.IDLE || waiting) {              // tap to (re)start; download() re-checks the network
-            row.setOnClickListener { HyMt.download(this); renderHyMt() }
-        }
+        if (state != LlmState.UNPINNED) row.setOnClickListener { pickLlm(m) }   // ponytail: an unpinned model cannot be picked
         return row
     }
 
@@ -663,7 +688,6 @@ class SettingsActivity : AppCompatActivity() {
         private const val BLOCK_HOLD = 1500L
         // translation card (prism-tide TIMINGS, ms)
         private const val TOGGLE = 200L
-        private const val HYMT = "hymt"
         private const val ROW_ANIM = 260L
         private const val SPARKLE = 380L
         private const val SHEET_IN = 300L

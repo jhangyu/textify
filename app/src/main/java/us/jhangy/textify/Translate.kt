@@ -145,7 +145,10 @@ class TranslateRun internal constructor(
     private fun dispatch(texts: Map<Int, String>, detected: Map<Int, String>) {
         if (closed) return
         val groups = LinkedHashMap<String, MutableList<Int>>()   // §2 step 3: one model check + translator per source
-        var hyMtRequested = false
+        val model = Prefs.activeModel(app)
+        val downloaded = Llm.downloaded(app)
+        val gpuFailed = Llm.gpuFailed
+        var llmRequested = false
         for ((i, tag) in detected) {
             val text = texts.getValue(i)
             when (val r = route(tag, TranslateLanguage.fromLanguageTag(tag), target)) {
@@ -153,15 +156,13 @@ class TranslateRun internal constructor(
                 Route.Unsupported -> report(i, ParagraphState.Unsupported)
                 Route.OpenCcOnly -> Translate.openCc(text) { report(i, openCcOnlyResult(text, it)) }
                 is Route.MlKit -> {
-                    val downloaded = HyMt.isDownloaded(app)
-                    val engine = engineFor(r.source, target, downloaded, HyMt.gpuFailed, HyMt::supports)
-                    if (engine == Engine.HYMT) {
-                        translateHyMt(i, r.source, texts)
+                    if (engineFor(r.source, target, model, downloaded, gpuFailed) == Engine.LLM) {
+                        translateLlm(model, i, r.source, texts)
                     } else {
-                        // Hy-MT2 missing but usable for this pair: fetch it for next time, translate with ML Kit now.
-                        if (!downloaded && !hyMtRequested && HyMt.supports(r.source) && HyMt.supports(target.mlkit)) {
-                            hyMtRequested = true
-                            HyMt.download(app)
+                        // Active LLM missing but usable for this pair: fetch it for next time, translate with ML Kit now.
+                        if (model.key !in downloaded && !llmRequested && model.supports(r.source) && model.supports(target.mlkit)) {
+                            llmRequested = true
+                            Llm.download(app, model)
                         }
                         groups.getOrPut(r.source) { ArrayList() } += i
                     }
@@ -171,9 +172,9 @@ class TranslateRun internal constructor(
         for ((source, idx) in groups) translateGroup(source, idx, texts)
     }
 
-    /** Hy-MT2 path for one paragraph; a null result (any failure) sends it through ML Kit. */
-    private fun translateHyMt(i: Int, source: String, texts: Map<Int, String>) {
-        HyMt.translate(app, flatten(texts.getValue(i), source), source, target) { out ->
+    /** LLM path for one paragraph; a null result (any failure) sends it through ML Kit. */
+    private fun translateLlm(model: ModelSpec, i: Int, source: String, texts: Map<Int, String>) {
+        Llm.translate(app, model, flatten(texts.getValue(i), source), source, target) { out ->
             if (closed) return@translate
             when {
                 out == null -> translateGroup(source, listOf(i), texts)   // per-paragraph ML Kit fallback

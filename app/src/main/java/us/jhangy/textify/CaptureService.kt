@@ -143,7 +143,7 @@ class CaptureService : Service() {
         projection?.unregisterCallback(projectionCallback)
         projection?.stop()
         projection = null
-        HyMt.release()
+        Llm.release()
         super.onDestroy()
     }
 

@@ -10,6 +10,7 @@ object Prefs {
     private const val SCRIPTS_KEY = "scripts"                 // StringSet of Script names
     private const val TARGET_KEY = "translate_target"         // TargetLang.key
     private const val WIFI_ONLY_KEY = "translate_wifi_only"
+    private const val ACTIVE_MODEL_KEY = "llm_active"         // ModelSpec.key
 
     private fun prefs(ctx: Context) = ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
@@ -36,5 +37,12 @@ object Prefs {
 
     fun setWifiOnly(ctx: Context, on: Boolean) {
         prefs(ctx).edit().putBoolean(WIFI_ONLY_KEY, on).apply()
+    }
+
+    /** Active translation LLM (the only one that translates); default the first of [MODELS]. */
+    fun activeModel(ctx: Context): ModelSpec = modelOf(prefs(ctx).getString(ACTIVE_MODEL_KEY, null))
+
+    fun setActiveModel(ctx: Context, key: String) {
+        prefs(ctx).edit().putString(ACTIVE_MODEL_KEY, key).apply()
     }
 }
