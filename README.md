@@ -8,9 +8,15 @@ Android 8+ device.
 ## How it works
 1. `MainActivity` requests the overlay permission + screen-capture consent, lets
    you pick the OCR language, then starts `CaptureService`.
-2. `CaptureService` (foreground, type `mediaProjection`) shows a draggable
-   bubble. Tapping it grabs one frame, runs `Ocr`, and opens `ResultActivity`.
-3. `ResultActivity` shows the text as selectable/copyable content.
+2. `CaptureService` (foreground, type `mediaProjection`) keeps one VirtualDisplay +
+   ImageReader for its whole lifetime and shows a draggable bubble. Tapping the
+   bubble fades it out, takes the latest frame and opens `SessionActivity`.
+   Dragging the bubble onto the bottom target stops the service.
+3. `SessionActivity` freezes the screen: the screenshot is shown 1:1 under hidden
+   system bars with an edge glow while `Ocr` runs, then every recognised line
+   becomes a pill. Tap a pill to copy the line (the pill shines and flashes);
+   long-press for partial selection with the system copy menu. X or back closes
+   the session and the bubble returns.
 
 ## OCR languages
 Chinese model (also covers Latin/English), Japanese, Korean — switch in the app.
