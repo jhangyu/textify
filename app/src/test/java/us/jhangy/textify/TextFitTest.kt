@@ -29,6 +29,14 @@ class TextFitTest {
     }
 
     @Test
+    fun verticalSingleColumnSizesFromWidth() {
+        // one vertical column 20 wide, 200 tall: glyph size from the width, not the column height
+        val m = lineMetrics(listOf(Box(0, 0, 20, 200)), vertical = true)
+        assertEquals(20f * TEXT_TO_BOX, m.textPx, 1e-4f)
+        assertEquals(20f, m.pitchPx, 1e-4f)
+    }
+
+    @Test
     fun fitPicksLargestThatFits() {
         // layout height = 10 × size; 150 px available -> 15 px fits, 16 px does not
         assertEquals(Fit(15f, false), fitTextSize(20f, 10f, 1f, 150) { (it * 10).toInt() })

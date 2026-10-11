@@ -15,9 +15,9 @@ import com.google.mlkit.vision.text.korean.KoreanTextRecognizerOptions
 
 /**
  * One recognised paragraph (ML Kit TextBlock). [text] = its lines joined with "\n"; [box] and the per-line
- * [lines] (top to bottom) are in screenshot (bitmap) pixels.
+ * [lines] (top to bottom) are in screenshot (bitmap) pixels. [vertical] = CJK text set top-to-bottom, columns right-to-left.
  */
-data class OcrBlock(val text: String, val box: Rect, val lines: List<Rect>)
+data class OcrBlock(val text: String, val box: Rect, val lines: List<Rect>, val vertical: Boolean = false)
 
 internal fun Rect.toBox(): Box = Box(left, top, right, bottom)
 
@@ -44,7 +44,7 @@ object Ocr {
             parts[i] = found
             if (--pending == 0) {
                 onResult(mergeOcr(parts.flatMap { it.orEmpty() })
-                    .map { c -> OcrBlock(c.text, c.box.toRect(), c.lines.map { it.toRect() }) })
+                    .map { c -> OcrBlock(c.text, c.box.toRect(), c.lines.map { it.toRect() }, c.vertical) })
             }
         }
         scripts.forEachIndexed { i, script ->
@@ -67,7 +67,7 @@ object Ocr {
         Script.KOREAN -> TextRecognition.getClient(KoreanTextRecognizerOptions.Builder().build())
     }
 
-    /** Translation spec §1: one candidate per TextBlock; blank or box-less lines dropped; confidence = mean line confidence. */
+    /** Translation spec §1: one candidate per TextBlock; blank or box-less lines dropped; confidence = mean line confidence; orientation by [isVertical]. */
     private fun candidates(result: Text): List<OcrCandidate> = result.textBlocks.mapNotNull { block ->
         val lines = block.lines.filter { it.boundingBox != null && it.text.isNotBlank() }
         if (lines.isEmpty()) return@mapNotNull null
@@ -75,6 +75,6 @@ object Ocr {
         val box = block.boundingBox?.toBox() ?: Box(
             boxes.minOf { it.left }, boxes.minOf { it.top }, boxes.maxOf { it.right }, boxes.maxOf { it.bottom },
         )
-        OcrCandidate(lines.joinToString("\n") { it.text }, box, boxes, paragraphConfidence(lines.map { it.confidence }))
+        ocrCandidate(lines.map { it.text }, boxes, box, paragraphConfidence(lines.map { it.confidence }))
     }
 }

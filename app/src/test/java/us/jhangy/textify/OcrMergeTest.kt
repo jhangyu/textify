@@ -1,6 +1,8 @@
 package us.jhangy.textify
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class OcrMergeTest {
@@ -130,5 +132,67 @@ class OcrMergeTest {
         // same tail one blank line lower: a separate paragraph, not a wrap
         val out = mergeOcr(listOf(p("one\ntwo", 100, 100, 400, 20, 2), tail("了。", 100, 182, 136, 194)))
         assertEquals(2, out.size)
+    }
+
+    // Vertical CJK: each ML Kit "line" is a column (tall, narrow box). Columns here are 20 px wide, 26 px pitch.
+    private fun col(l: Int, t: Int, chars: Int) = Box(l, t, l + 20, t + chars * 20)
+
+    @Test
+    fun verticalCjkBlockDetectedAndColumnsOrderedRightToLeft() {
+        // given left to right; reading order is right to left
+        val c = ocrCandidate(listOf("三三三三三", "二二二二二", "一一一一一"), listOf(col(248, 100, 5), col(274, 100, 5), col(300, 100, 5)), Box(248, 100, 320, 200), 0.9f)
+        assertTrue(c.vertical)
+        assertEquals("一一一一一\n二二二二二\n三三三三三", c.text)
+        assertEquals(listOf(300, 274, 248), c.lines.map { it.left })
+    }
+
+    @Test
+    fun horizontalCjkAndLatinBlocksDetectedHorizontal() {
+        val cjk = ocrCandidate(listOf("第一行文字", "第二行文字"), listOf(Box(100, 100, 200, 120), Box(100, 126, 200, 146)), Box(100, 100, 200, 146), 0.9f)
+        assertFalse(cjk.vertical)
+        assertEquals("第一行文字\n第二行文字", cjk.text)
+        // tall narrow Latin boxes are never judged vertical
+        val latin = ocrCandidate(listOf("ab", "cd"), listOf(col(274, 100, 5), col(300, 100, 5)), Box(274, 100, 320, 200), 0.9f)
+        assertFalse(latin.vertical)
+    }
+
+    private fun v(text: String, l: Int, t: Int, chars: Int) =
+        OcrCandidate(text, col(l, t, chars), listOf(col(l, t, chars)), 0.9f, vertical = true)
+
+    @Test
+    fun verticalColumnsAndShortTailMergeRightToLeft() {
+        // tail "了。": 2 chars, "。" hugs the ink so the box is shorter and narrower
+        val out = mergeOcr(listOf(
+            v("三三三三三", 248, 101, 5),
+            OcrCandidate("了。", Box(224, 100, 240, 132), listOf(Box(224, 100, 240, 132)), 0.9f, vertical = true),
+            v("一一一一一", 300, 100, 5),
+            v("二二二二二", 274, 102, 5),
+        ))
+        assertEquals(1, out.size)
+        assertTrue(out[0].vertical)
+        assertEquals("一一一一一\n二二二二二\n三三三三三\n了。", out[0].text)
+        assertEquals(Box(224, 100, 320, 202), out[0].box)
+        assertEquals(listOf(300, 274, 248, 224), out[0].lines.map { it.left })
+    }
+
+    @Test
+    fun verticalColumnsFarApartStayApart() {
+        val out = mergeOcr(listOf(v("一一一一一", 300, 100, 5), v("二二二二二", 230, 100, 5)))   // gap 50 = 2.5 columns
+        assertEquals(2, out.size)
+    }
+
+    @Test
+    fun verticalAndHorizontalNeighboursStayApart() {
+        // a horizontal 2-char line where a vertical tail column would sit, and a horizontal column-shaped block
+        val out = mergeOcr(listOf(
+            v("一一一一一", 300, 100, 5),
+            OcrCandidate("了。", Box(274, 100, 294, 140), listOf(Box(274, 100, 294, 140)), 0.9f),
+        ))
+        assertEquals(2, out.size)
+        val below = mergeOcr(listOf(
+            OcrCandidate("第一行", Box(100, 100, 160, 120), listOf(Box(100, 100, 160, 120)), 0.9f),
+            OcrCandidate("二", Box(100, 126, 120, 146), listOf(Box(100, 126, 120, 146)), 0.9f, vertical = true),
+        ))
+        assertEquals(2, below.size)
     }
 }

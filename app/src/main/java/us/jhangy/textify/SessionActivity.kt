@@ -292,7 +292,7 @@ class SessionActivity : AppCompatActivity() {
         }
         chips[i].show(if (translating) chipFor(s) else null, delayMs)
         if (translating && s is ParagraphState.Done) {
-            if (!pill.showsTranslation || pill.translationText != s.text) pill.showTranslation(s.text, cardColor(i), reveal, delayMs)
+            if (!pill.showsTranslation || pill.translationText != s.text) pill.showTranslation(s.text, cardColor(i), reveal, delayMs, blocks[i].vertical && verticalTarget(Prefs.target(this)))
         } else if (pill.showsTranslation) {
             pill.showOriginal(reveal, delayMs)
         }

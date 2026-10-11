@@ -32,6 +32,8 @@ import kotlin.math.roundToInt
  * OCR line boxes, so long-press gives system handles + copy menu on the glyphs.
  * Translated: a solid card in the screenshot's edge colour hides the glyphs and shows the translation as real,
  * selectable text, fitted down to 10sp and truncated with a "⋯" mark below that.
+ * Vertical CJK paragraph + CJK target: the translation is drawn as columns right to left (VerticalText.kt); the
+ * TextView keeps the same text transparent so long-press select / copy still work (handles are not on the columns).
  * Tap is detected with GestureDetector: a selectable TextView is focusable in touch mode, so the first tap would
  * only take focus and never reach an OnClickListener.
  */
@@ -89,6 +91,8 @@ class PillView(context: Context, val block: OcrBlock) : AppCompatTextView(contex
     private var corner = 0f
     private var originalTextPx = 0f
     private var markLinePx = 0f
+    private var vertical: VerticalLayout? = null          // non-null = translation drawn as vertical columns
+    private val vPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val overlay = Paint(Paint.ANTI_ALIAS_FLAG)
     private val shine = Paint(Paint.ANTI_ALIAS_FLAG)
     private val shimmerPaint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -142,7 +146,7 @@ class PillView(context: Context, val block: OcrBlock) : AppCompatTextView(contex
     /** Spec §1: keep the OCR line breaks; size and pitch from the OCR line boxes; squeeze glyphs to their widths. */
     private fun applyOriginalLayout() {
         val boxes = block.lines.map { it.toBox() }
-        val m = lineMetrics(boxes)
+        val m = lineMetrics(boxes, block.vertical)
         originalTextPx = m.textPx
         setHorizontallyScrolling(true)                    // never re-wrap: one TextView line per OCR line
         maxLines = Int.MAX_VALUE
@@ -160,7 +164,7 @@ class PillView(context: Context, val block: OcrBlock) : AppCompatTextView(contex
     private fun applyTranslatedLayout(text: String) {
         val lp = layoutParams
         val innerH = max(1, lp.height - paddingTop - paddingBottom)
-        val minPx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, MIN_SP, resources.displayMetrics)
+        val minPx = minPx()
         // measure with the TextView's own layout so fallback-font line heights match what is drawn (one path, API 26+)
         setHorizontallyScrolling(false)
         textScaleX = 1f
@@ -188,11 +192,50 @@ class PillView(context: Context, val block: OcrBlock) : AppCompatTextView(contex
         scrollTo(0, 0)
     }
 
+    private fun minPx() = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, MIN_SP, resources.displayMetrics)
+
+    /** Vertical translation: columns fitted into the box (same size range as above), "︙" ends the last column when cut. */
+    private fun applyVerticalLayout(text: String) {
+        val lp = layoutParams
+        val minPx = minPx()
+        val v = layoutVertical(
+            text, max(1, lp.width - paddingLeft - paddingRight), max(1, lp.height - paddingTop - paddingBottom),
+            max(originalTextPx, minPx), minPx,
+        )
+        vertical = v
+        truncated = v.truncated
+        markLinePx = 0f                                  // the mark is in the columns, not the horizontal "⋯" strip
+        setTextColor(Color.TRANSPARENT)                  // TextView text stays for selection; columns are drawn in onDraw
+    }
+
+    /** One glyph per em, top to bottom; columns right to left from the inner right edge. */
+    private fun drawColumns(canvas: Canvas, v: VerticalLayout) {
+        vPaint.set(paint)
+        vPaint.color = card.textColor
+        vPaint.textSize = v.textPx
+        vPaint.textScaleX = 1f
+        vPaint.textAlign = Paint.Align.CENTER
+        val fm = vPaint.fontMetrics
+        val dy = v.textPx / 2f - (fm.ascent + fm.descent) / 2f
+        var x = width - paddingRight - v.textPx / 2f
+        for (col in v.columns) {
+            var y = paddingTop + dy
+            var i = 0
+            while (i < col.length) {
+                val n = Character.charCount(col.codePointAt(i))
+                canvas.drawText(col, i, i + n, x, y, vPaint)
+                y += v.textPx
+                i += n
+            }
+            x -= v.textPx * VCOL_PITCH
+        }
+    }
+
     /**
      * Shows [text] on a solid card of colour [bg] (spec §3). [reveal]: NONE = at once, TOP_DOWN = tide flip,
-     * LEFT_RIGHT = arrive flip + prism sweep. Starts after [delayMs].
+     * LEFT_RIGHT = arrive flip + prism sweep. Starts after [delayMs]. [vertical] = draw as vertical columns.
      */
-    fun showTranslation(text: String, bg: Int, reveal: Reveal, delayMs: Long) {
+    fun showTranslation(text: String, bg: Int, reveal: Reveal, delayMs: Long, vertical: Boolean) {
         translationText = text
         showsTranslation = true
         card.color = bg
@@ -200,6 +243,8 @@ class PillView(context: Context, val block: OcrBlock) : AppCompatTextView(contex
         setText(text)
         setTextColor(card.textColor)
         applyTranslatedLayout(text)
+        this.vertical = null
+        if (vertical) applyVerticalLayout(text)
         animateReveal(1f, reveal, delayMs, null)
         if (reveal == Reveal.LEFT_RIGHT) playPrism(delayMs)
     }
@@ -212,6 +257,7 @@ class PillView(context: Context, val block: OcrBlock) : AppCompatTextView(contex
             translationText = null
             truncated = false
             markLinePx = 0f
+            vertical = null
             setText(block.text)
             setTextColor(Color.TRANSPARENT)
             applyOriginalLayout()
@@ -424,6 +470,7 @@ class PillView(context: Context, val block: OcrBlock) : AppCompatTextView(contex
                 super.onDraw(canvas)
                 canvas.translate(scrollX.toFloat(), scrollY.toFloat())
                 if (markLinePx > 0f) card.drawMark(canvas, markLinePx)       // over the text, under the same clip
+                vertical?.let { drawColumns(canvas, it) }
                 canvas.restoreToCount(clip)
             }
         }

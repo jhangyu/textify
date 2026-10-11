@@ -11,14 +11,17 @@ internal data class LineMetrics(val textPx: Float, val pitchPx: Float)
 // ponytail: glyph em ≈ 0.85 × OCR line-box height; calibration knob, tune on device if handles drift
 internal const val TEXT_TO_BOX = 0.85f
 
-/** [lines] top to bottom, non-empty. Size from the median line height; pitch = mean distance between line tops (1 line: its height). */
-internal fun lineMetrics(lines: List<Box>): LineMetrics {
+/**
+ * [lines] top to bottom, non-empty. Size from the median line height; pitch = mean distance between line tops (1 line: its height).
+ * [vertical] (lines are columns): size from the narrowest column, pitch = one glyph line.
+ */
+internal fun lineMetrics(lines: List<Box>, vertical: Boolean = false): LineMetrics {
     require(lines.isNotEmpty())
     val heights = lines.map { it.height }.sorted()
     val median = heights[heights.size / 2].toFloat()
     val pitch = if (lines.size < 2) median else (lines.last().top - lines.first().top).toFloat() / (lines.size - 1)
     // ponytail: tops almost equal = side-by-side lines (vertical ja/zh columns): the height is a column, not a glyph
-    if (lines.size > 1 && pitch < median * 0.5f) {
+    if (vertical || (lines.size > 1 && pitch < median * 0.5f)) {
         val textPx = minOf(median, lines.minOf { it.width }.toFloat()) * TEXT_TO_BOX
         return LineMetrics(textPx, textPx / TEXT_TO_BOX)
     }
