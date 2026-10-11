@@ -21,7 +21,7 @@ Spec: `docs/superpowers/specs/2026-10-11-settings-redesign-impl-spec.md` (cited 
 ## Global Constraints
 
 - Repo `/Users/jhangyu/project/textify`, branch `main`. Paths below: `java/…` = `app/src/main/java/us/jhangy/textify/…`, `res/…` = `app/src/main/res/…`.
-- Build gate (gate-runner only; implementers never run Gradle — it exceeds the foreground limit): `cd /Users/jhangyu/project/textify && JAVA_HOME=/opt/homebrew/opt/openjdk@21 ./gradlew assembleDebug testDebugUnitTest; echo "RC=$?"`. Pass = `RC=0`.
+- Build gate (run by the round reviewer only, per execution plan §3: detached, raw output to `scripts/tmp/verify/<ts>.txt` with `RC=$?` captured right after Gradle, first liveness check within 5 minutes; implementers never run Gradle — it exceeds the foreground limit): `JAVA_HOME=/opt/homebrew/opt/openjdk@21 ./gradlew assembleDebug testDebugUnitTest`. Pass = `RC=0`.
 - One code path API 26–36. `Build.VERSION.SDK_INT` may appear only in the two places listed in spec §11 (both in round-2 `MainActivity.kt`). Never use `RenderEffect`, `setShadowLayer`, `outlineSpotShadowColor`, `HapticFeedbackConstants.REJECT`, `Typeface.create(…, weight, …)`, `android:textFontWeight`.
 - Font weights: CSS weight ≥ 600 → `Typeface.DEFAULT_BOLD` / `android:textStyle="bold"`; 500 and below → normal. (Weight-specific typefaces need API 28.)
 - Units: CSS px = dp, CSS font px = sp. Colours `#RRGGBB a%` = `withAlpha(a, 0xRRGGBB)`. CSS easing → `PathInterpolator`: `ease` (.25,.1,.25,1), `ease-out` (0,0,.58,1), `ease-in` (.42,0,1,1), emphasized (.2,0,0,1).
@@ -31,7 +31,7 @@ Spec: `docs/superpowers/specs/2026-10-11-settings-redesign-impl-spec.md` (cited 
 - Unreleased: delete replaced code fully; no compatibility shims except the round-1 compatibility of existing public APIs listed in "Round-1 compatibility contract" (needed because round-2 owners replace the callers).
 - Git (shared tree, every unit): `git rev-parse --abbrev-ref HEAD` must print `main`; `git add <own paths>` then `git commit -m "…" -- <own paths>`; deletions via `git rm <path>` and the same pathspec commit; `git status --porcelain -- <own paths>` empty afterwards. Forbidden: `git stash` (incl. `stash list`), `reset`, `checkout --`, `clean`, `add -A`, `push`. Commit message ends with `Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>` (or the attribution line the dispatch prompt gives).
 - No sleep / polling. Report `READY_FOR_SIGNOFF` or `BLOCKED` to the lead; the lead signs off and closes tickets.
-- Baton sizes: "judgment" units carry ≤ 2 tickets per holder, "mechanical" units ≤ 4 (CLAUDE.md §6). At the limit write a baton file `docs/logs/settings-redesign-baton-<unit>.md` (contract verbatim + done evidence + failure trail + red lines) and report `READY_FOR_HANDOFF`.
+- Baton sizes: "judgment" units carry ≤ 2 tickets per holder, "mechanical" units ≤ 4 (CLAUDE.md §6). At the limit write a baton file `docs/logs/settings-redesign/baton-<member>-<k>.md` (execution plan §6) (contract verbatim + done evidence + failure trail + red lines) and report `READY_FOR_HANDOFF`.
 
 ## Frozen interfaces (round 1)
 
@@ -1216,7 +1216,7 @@ git status --porcelain -- "$@"
 ```
 Then SendMessage team-lead exactly: `SIGNATURES <hash>` (the lead forwards the hash to R1-C and R1-D).
 
-- [ ] **Step 6: Run the acceptance greps**; report. Build is run by the gate-runner at round exit.
+- [ ] **Step 6: Run the acceptance greps**; report. Build is run by the round-1 reviewer at round exit (execution plan §3).
 
 ### Unit R1-C: Capture demo + step track — judgment, 2 tickets (T1 `CaptureDemoView`; T2 `StepTrackView`), commit after each
 
@@ -2483,7 +2483,7 @@ git status --porcelain -- "$@"
 **Constraints:** Test dependency `junit:junit:4.13.2` only (latest on Maven Central, verified). No Robolectric, no `testOptions`.
 
 **Acceptance criteria:**
-- [ ] `./gradlew testDebugUnitTest --tests us.jhangy.textify.OcrMergeTest` (gate-runner) passes 5 tests: `overlapAboveHalfKeepsHigherConfidence`, `equalConfidenceKeepsLongerText`, `iouExactlyHalfKeepsBoth`, `disjointLinesBothKept`, `resultSortedTopThenLeft`.
+- [ ] `./gradlew testDebugUnitTest --tests us.jhangy.textify.OcrMergeTest` (round-1 reviewer, execution plan §3) passes 5 tests: `overlapAboveHalfKeepsHigherConfidence`, `equalConfidenceKeepsLongerText`, `iouExactlyHalfKeepsBoth`, `disjointLinesBothKept`, `resultSortedTopThenLeft`.
 - [ ] Red check (R1 reviewer, on a copy): replace `> IOU_LIMIT` with `>= IOU_LIMIT` in a scratch copy of `OcrMerge.kt` (cp backup first, restore only from the backup) → `iouExactlyHalfKeepsBoth` fails; restore → passes.
 - [ ] `grep -c 'testImplementation("junit:junit:4.13.2")' app/build.gradle.kts` = 1; `grep -n "^import android" app/src/main/java/us/jhangy/textify/OcrMerge.kt` prints nothing.
 
@@ -2550,7 +2550,7 @@ class OcrMergeTest {
     }
 }
 ```
-Run (gate-runner, or skip and let the round gate catch it): `JAVA_HOME=/opt/homebrew/opt/openjdk@21 ./gradlew testDebugUnitTest --tests us.jhangy.textify.OcrMergeTest; echo "RC=$?"` → expected compile failure `Unresolved reference: mergeOcr` (the red step; record it in the report if run).
+Run (round-1 reviewer, detached per execution plan §3, or skip and let the round gate catch it): `JAVA_HOME=/opt/homebrew/opt/openjdk@21 ./gradlew testDebugUnitTest --tests us.jhangy.textify.OcrMergeTest; echo "RC=$?"` → expected compile failure `Unresolved reference: mergeOcr` (the red step; record it in the report if run).
 
 - [ ] **Step 3: Create `java/OcrMerge.kt`**
 ```kotlin
@@ -2599,7 +2599,7 @@ internal fun mergeOcr(candidates: List<OcrCandidate>): List<OcrCandidate> {
 }
 ```
 
-- [ ] **Step 4: Run the test** (gate-runner): same command → `BUILD SUCCESSFUL`, 5 tests, `RC=0`.
+- [ ] **Step 4: Run the test** (round-1 reviewer, execution plan §3): same command → `BUILD SUCCESSFUL`, 5 tests, `RC=0`.
 
 - [ ] **Step 5: Commit**
 ```bash
@@ -2614,7 +2614,7 @@ git status --porcelain -- "$@"
 1. Ownership: `git diff --name-only <round-1 base>..HEAD` lists only the files of the R1 file map (plus nothing else).
 2. Compatibility contract: the `git diff --stat` command of "Round-1 compatibility contract" prints nothing.
 3. Each unit's acceptance greps (re-run, do not trust reports).
-4. Build gate (gate-runner): `JAVA_HOME=/opt/homebrew/opt/openjdk@21 ./gradlew assembleDebug testDebugUnitTest; echo "RC=$?"` → `RC=0`, and the output contains `OcrMergeTest` with 5 tests run (from `app/build/test-results/testDebugUnitTest/*.xml`: `grep -c "<testcase" …` = 5).
+4. Build gate (reviewer, execution plan §3): `JAVA_HOME=/opt/homebrew/opt/openjdk@21 ./gradlew assembleDebug testDebugUnitTest` → `RC=0`, and the output contains `OcrMergeTest` with 5 tests run (from `app/build/test-results/testDebugUnitTest/*.xml`: `grep -c "<testcase" …` = 5).
 5. R1-E red check (mutation on a copy, restore from the `cp` backup).
 6. Code reading against the spec: `HaloRecipe` table = spec §8.1; `DemoSpec` = spec §8.2; keyframe numbers in `CaptureDemoView` = spec §8.2 list; `PillView` constants unchanged (`git diff <base> -- PillView.kt` touches only glow/fill/argb lines); `EdgeGlowView.SESSION` = old constants.
 7. Blocker vs. nit: only build failures, compatibility breaks, wrong spec values and ownership violations are blockers (two review rounds max per unit); everything else goes to the parking lot.
@@ -4310,15 +4310,11 @@ LiteRT int4 model with a hardware delegate.
 
 ### R2 reviewer (gate + whole-feature acceptance)
 
-Role: one reviewer (fresh context) plus the gate-runner (haiku, runs commands only, reports raw output). The reviewer does not fix code.
+Role: one reviewer (fresh context) who also runs the gate (execution plan §3). The reviewer does not fix code.
 
 #### Round-2 convergence gate
-1. Start condition: all five R2 units report `READY_FOR_SIGNOFF`; every writer has broadcast `SETTLED`. From then until the gate-runner confirms completion, zero writes to the tree (gitignored paths included).
-2. Gate-runner runs, from the repo root, and records start/end time and `RC=$?` captured by the command itself into `docs/logs/settings-redesign-r2-gate-<n>.log` (`n` = gate attempt 1, 2, 3):
-   ```bash
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21 ./gradlew assembleDebug testDebugUnitTest > docs/logs/settings-redesign-r2-gate-<n>.log 2>&1; RC=$?; echo "RC=$RC" >> docs/logs/settings-redesign-r2-gate-<n>.log
-   ```
-   If it would exceed the foreground limit, the runner splits it into `assembleDebug` and `testDebugUnitTest` (two logs), never backgrounds it.
+1. Start condition: all five R2 units report `READY_FOR_SIGNOFF`; every writer has broadcast `SETTLED`. From then until the lead announces the gate window closed (execution plan §3), zero writes to the tree (gitignored paths included).
+2. The reviewer runs the gate exactly as execution plan §3 (detached, raw output to `scripts/tmp/verify/<ts>.txt` with `START … HEAD`, `RC=$?` captured right after the Gradle command, `END`; first liveness check within 5 minutes; completion = `RC=` line present and no Gradle client process). One output file per gate attempt (1, 2, 3).
 3. Routing: every compile/test error is routed to the owner of the file named in the error (`e: file:///…/<File>.kt:<line>` or AAPT `…/res/<path>`), using this table. The owner fixes only its own files; a fix that needs another unit's file is sent to that unit's owner via the lead.
 
    | file | owner |
