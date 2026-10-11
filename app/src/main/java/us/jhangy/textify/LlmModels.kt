@@ -5,7 +5,7 @@ package us.jhangy.textify
  * test runner; Llm.kt is the one engine that runs whichever spec is active.
  */
 
-/** Sampling settings; null in [ModelSpec.sampler] = the model's own defaults. */
+/** Sampling settings for every conversation of a model. */
 data class Sampler(val topK: Int, val topP: Double, val temperature: Double)
 
 /**
@@ -22,7 +22,7 @@ class ModelSpec(
     val file: String,
     val revision: String,
     val size: Long,
-    val sampler: Sampler?,
+    val sampler: Sampler,
     val context: Map<String, Any>,
     val prompt: (String, TargetLang) -> String?,
     val clean: (String) -> String?,

@@ -2,7 +2,7 @@ package us.jhangy.textify
 
 /*
  * Pure Hy-MT2 rules: prompt, language names, output cleanup. No Android or LiteRT-LM imports, so they run on the
- * JVM test runner; HyMt.kt feeds them to the engine.
+ * JVM test runner; the Hy-MT2 spec in LlmModels.kt hands them to the engine (Llm.kt).
  */
 internal object HyMtRules {
     /** ML Kit code -> English language name of the Hy-MT2 language table (model card "Supported Languages"). */

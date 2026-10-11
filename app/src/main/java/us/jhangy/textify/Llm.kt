@@ -193,9 +193,8 @@ object Llm {
         engineKey = m.key
         return try {
             // A fresh conversation per paragraph keeps paragraphs independent.
-            val config = m.sampler?.let { ConversationConfig(samplerConfig = SamplerConfig(topK = it.topK, topP = it.topP, temperature = it.temperature)) }
-                ?: ConversationConfig()
-            e.createConversation(config).use { m.clean(it.sendMessage(prompt, m.context).toString()) }
+            val s = m.sampler
+            e.createConversation(ConversationConfig(samplerConfig = SamplerConfig(topK = s.topK, topP = s.topP, temperature = s.temperature))).use { m.clean(it.sendMessage(prompt, m.context).toString()) }
         } catch (t: Throwable) {
             null
         }
