@@ -10,10 +10,11 @@ import android.content.Context
 import android.content.Intent
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
-import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.provider.Settings
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
 
 /**
@@ -21,6 +22,7 @@ import androidx.core.app.NotificationCompat
  * ([ScreenGrabber]) and the floating [Bubble]. A bubble tap fades the bubble out, grabs the
  * next frame and opens [SessionActivity]; the bubble fades back in on [onSessionEnded].
  * Dragging the bubble onto the bottom target stops the service.
+ * While [SettingsActivity] is visible the bubble stays hidden ([setSettingsVisible]).
  */
 class CaptureService : Service() {
 
@@ -29,6 +31,8 @@ class CaptureService : Service() {
     private var grabber: ScreenGrabber? = null
     private var bubble: Bubble? = null
     private var busy = false   // true from bubble tap until the session ends (or the grab fails)
+    private var settingsVisible = false
+    private val showBubble = Runnable { if (!settingsVisible && !busy) bubble?.fadeIn() }
 
     private val projectionCallback = object : MediaProjection.Callback() {
         override fun onStop() { stopSelf() }
@@ -72,7 +76,7 @@ class CaptureService : Service() {
     }
 
     private fun capture() {
-        if (busy) return
+        if (busy || settingsVisible) return
         val g = grabber ?: return
         val b = bubble ?: return
         busy = true
@@ -91,30 +95,46 @@ class CaptureService : Service() {
 
     private fun sessionEnded() {
         busy = false
-        bubble?.fadeIn()
+        if (!settingsVisible) bubble?.fadeIn()
+    }
+
+    private fun applySettingsVisible(visible: Boolean) {
+        settingsVisible = visible
+        main.removeCallbacks(showBubble)
+        if (visible) {
+            // busy: the bubble is already hidden; a second fadeOut would cancel capture()'s pending grab
+            if (!busy) bubble?.fadeOut {}
+            return
+        }
+        if (busy) return                       // the session end fades the bubble in
+        if (Settings.canDrawOverlays(this)) {
+            main.postDelayed(showBubble, BUBBLE_DELAY)   // bubbleDelay 120, then bubbleIn 300 (Bubble.fadeIn)
+        } else {
+            Toast.makeText(this, R.string.toast_bubble_hidden, Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun buildNotification(): Notification {
-        val mgr = getSystemService(NotificationManager::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            mgr.createNotificationChannel(
-                NotificationChannel(CHANNEL, "Textify", NotificationManager.IMPORTANCE_LOW)
-            )
-        }
+        getSystemService(NotificationManager::class.java).createNotificationChannel(
+            NotificationChannel(CHANNEL, "Textify", NotificationManager.IMPORTANCE_LOW)
+        )
         val stop = PendingIntent.getService(
             this, 0, Intent(this, CaptureService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_IMMUTABLE
         )
         return NotificationCompat.Builder(this, CHANNEL)
+            .setSmallIcon(R.drawable.ic_stat_textify)
+            .setColor(0xFF7C3AED.toInt())
             .setContentTitle(getString(R.string.notif_title))
-            .setSmallIcon(android.R.drawable.ic_menu_crop)
-            .addAction(0, getString(R.string.stop), stop)
+            .setContentText(getString(R.string.notif_text))
+            .addAction(0, getString(R.string.notif_stop), stop)
             .setOngoing(true)
             .build()
     }
 
     override fun onDestroy() {
         instance = null   // first: the finishing session's onSessionEnded() becomes a no-op
+        main.removeCallbacks(showBubble)
         SessionActivity.finishActive()
         bubble?.remove()
         bubble = null
@@ -132,10 +152,19 @@ class CaptureService : Service() {
         private const val EXTRA_CODE = "code"
         private const val EXTRA_DATA = "data"
         private const val ACTION_STOP = "us.jhangy.textify.STOP"
+        private const val BUBBLE_DELAY = 120L
 
         // Set in onCreate, cleared in onDestroy: never outlives the service.
         @SuppressLint("StaticFieldLeak")
         private var instance: CaptureService? = null
+
+        /** True while the service instance exists. */
+        val isRunning: Boolean get() = instance != null
+
+        /** SettingsActivity / SessionActivity (main thread): hide the bubble while settings is visible. No-op if not running. */
+        fun setSettingsVisible(visible: Boolean) {
+            instance?.applySettingsVisible(visible)
+        }
 
         /** Called by SessionActivity (main thread) when its session finishes. No-op if the service is not running. */
         fun onSessionEnded() {
@@ -143,17 +172,9 @@ class CaptureService : Service() {
         }
 
         fun start(ctx: Context, code: Int, data: Intent) {
-            val i = Intent(ctx, CaptureService::class.java)
-                .putExtra(EXTRA_CODE, code).putExtra(EXTRA_DATA, data)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                ctx.startForegroundService(i)
-            } else {
-                ctx.startService(i)
-            }
-        }
-
-        fun stop(ctx: Context) {
-            ctx.startService(Intent(ctx, CaptureService::class.java).setAction(ACTION_STOP))
+            ctx.startForegroundService(
+                Intent(ctx, CaptureService::class.java).putExtra(EXTRA_CODE, code).putExtra(EXTRA_DATA, data)
+            )
         }
     }
 }
