@@ -49,6 +49,7 @@ Needs JDK 17 or 21 (not 25), Android SDK with platform 36.
 ```bash
 JAVA_HOME=/opt/homebrew/opt/openjdk@21 ./gradlew assembleDebug
 # APK: app/build/outputs/apk/debug/app-debug.apk
+python3 scripts/build_release.py   # signed release APK
 ```
 `local.properties` must point `sdk.dir` at your Android SDK.
 
