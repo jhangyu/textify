@@ -139,8 +139,8 @@ class EdgeGlowView @JvmOverloads constructor(
     private fun renderMask(m: Bitmap, haloWidthDp: Float, haloAlpha: Float, coreWidthDp: Float, coreAlpha: Float) {
         val hw = (haloWidthDp * 2f).roundToInt()                       // 0.5 dp steps
         val ha = (haloAlpha.coerceIn(0f, 1f) * 255f).roundToInt()
-        val cw = (coreWidthDp * 2f).roundToInt()
         val ca = if (coreAlpha > 0.01f) (coreAlpha.coerceIn(0f, 1f) * 255f).roundToInt() else 0
+        val cw = if (ca > 0) (coreWidthDp * 2f).roundToInt() else 0  // invisible core: breathing must not dirty the mask
         val key = (hw.toLong() shl 48) or (ha.toLong() shl 32) or (cw.toLong() shl 16) or ca.toLong()
         if (key == maskKey && maskShader != null) return
         maskKey = key
