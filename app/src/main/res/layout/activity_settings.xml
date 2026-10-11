@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Settings (spec §7): mist page, top bar, scrollable cards (permission, language), footer. -->
+<!-- Settings (spec §7): mist page, top bar, scrollable cards (permission, language, translation), footer, language sheet. -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/root"
@@ -333,11 +333,154 @@
                     </LinearLayout>
                 </LinearLayout>
 
+                <!-- 「翻譯」 card (translation spec §4, prism-tide #trCard); background set in code -->
+                <LinearLayout
+                    android:id="@+id/trCard"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:clipChildren="false" android:clipToPadding="false"
+                    android:orientation="vertical"
+                    android:paddingStart="16dp" android:paddingTop="16dp" android:paddingEnd="16dp" android:paddingBottom="18dp">
+
+                    <LinearLayout
+                        android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:layout_marginStart="4dp" android:layout_marginEnd="4dp" android:layout_marginBottom="12dp"
+                        android:orientation="horizontal">
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                            android:letterSpacing="0.06" android:text="@string/tr_section"
+                            android:textColor="#6B5FA8" android:textSize="13sp" android:textStyle="bold" />
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                            android:layout_marginStart="8dp" android:alpha="0.8" android:text="@string/tr_section_hint"
+                            android:textColor="#6B5FA8" android:textSize="13sp" />
+                    </LinearLayout>
+
+                    <!-- .rows: target + Wi-Fi-only (prow: min 56dp, padding 16/10/10/10) -->
+                    <LinearLayout
+                        android:id="@+id/trRows"
+                        android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:orientation="vertical">
+                        <LinearLayout
+                            android:id="@+id/targetRow"
+                            android:layout_width="match_parent" android:layout_height="wrap_content"
+                            android:minHeight="56dp" android:gravity="center_vertical" android:orientation="horizontal"
+                            android:paddingStart="16dp" android:paddingTop="10dp" android:paddingEnd="10dp" android:paddingBottom="10dp"
+                            android:clickable="true" android:focusable="true">
+                            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                                android:orientation="vertical">
+                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                                    android:text="@string/tr_target" android:textColor="#1E1B4B" android:textSize="14.5sp" android:textStyle="bold" />
+                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                                    android:layout_marginTop="2dp" android:text="@string/tr_target_sub" android:textColor="#6B5FA8" android:textSize="12sp" />
+                            </LinearLayout>
+                            <TextView android:id="@+id/targetValue" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                                android:textColor="#7C3AED" android:textSize="14.5sp" android:textStyle="bold" />
+                            <ImageView android:layout_width="18dp" android:layout_height="18dp" android:layout_marginStart="4dp"
+                                android:importantForAccessibility="no" android:src="@drawable/ic_chevron" />
+                        </LinearLayout>
+                        <LinearLayout
+                            android:id="@+id/wifiRow"
+                            android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp"
+                            android:minHeight="56dp" android:gravity="center_vertical" android:orientation="horizontal"
+                            android:paddingStart="16dp" android:paddingTop="10dp" android:paddingEnd="10dp" android:paddingBottom="10dp"
+                            android:clickable="true" android:focusable="true">
+                            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                                android:orientation="vertical">
+                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                                    android:text="@string/tr_wifi" android:textColor="#1E1B4B" android:textSize="14.5sp" android:textStyle="bold" />
+                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                                    android:layout_marginTop="2dp" android:text="@string/tr_wifi_sub" android:textColor="#6B5FA8" android:textSize="12sp" />
+                            </LinearLayout>
+                            <!-- settings-final .switch 52×32, thumb 24dp at 4dp -->
+                            <FrameLayout android:id="@+id/wifiSwitch" android:layout_width="52dp" android:layout_height="32dp"
+                                android:clipChildren="false" android:importantForAccessibility="no">
+                                <View android:id="@+id/wifiTrackOff" android:layout_width="match_parent" android:layout_height="match_parent" />
+                                <View android:id="@+id/wifiTrackOn" android:layout_width="match_parent" android:layout_height="match_parent" android:alpha="0" />
+                                <View android:id="@+id/wifiThumb" android:layout_width="24dp" android:layout_height="24dp"
+                                    android:layout_gravity="start|center_vertical" android:layout_marginStart="4dp" />
+                            </FrameLayout>
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <!-- .mh margin 16/6/8 -->
+                    <LinearLayout
+                        android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:layout_marginStart="6dp" android:layout_marginTop="16dp" android:layout_marginEnd="6dp" android:layout_marginBottom="8dp"
+                        android:baselineAligned="true" android:orientation="horizontal">
+                        <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                            android:text="@string/tr_models" android:textColor="#6B5FA8" android:textSize="13sp" android:textStyle="bold" />
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                            android:alpha="0.85" android:text="@string/tr_models_hint" android:textColor="#6B5FA8" android:textSize="12sp" />
+                    </LinearLayout>
+
+                    <!-- .wells: rows added in code -->
+                    <LinearLayout
+                        android:id="@+id/modelWell"
+                        android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:orientation="vertical" android:padding="4dp" />
+
+                    <LinearLayout
+                        android:id="@+id/dlBtn"
+                        android:layout_width="match_parent" android:layout_height="50dp" android:layout_marginTop="12dp"
+                        android:gravity="center" android:orientation="horizontal"
+                        android:clickable="true" android:focusable="true">
+                        <ImageView android:layout_width="20dp" android:layout_height="20dp"
+                            android:importantForAccessibility="no" android:src="@drawable/ic_download" />
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp"
+                            android:text="@string/tr_predownload" android:textColor="#4C1D95" android:textSize="15sp" android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:layout_marginStart="6dp" android:layout_marginTop="10dp" android:layout_marginEnd="6dp"
+                        android:orientation="horizontal">
+                        <ImageView android:layout_width="15dp" android:layout_height="15dp" android:layout_marginTop="2dp"
+                            android:importantForAccessibility="no" android:src="@drawable/ic_info" />
+                        <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                            android:layout_marginStart="6dp" android:lineSpacingMultiplier="1.2"
+                            android:text="@string/tr_note" android:textColor="#6B5FA8" android:textSize="12.5sp" />
+                    </LinearLayout>
+                </LinearLayout>
+
                 <TextView
                     android:layout_width="match_parent" android:layout_height="wrap_content"
                     android:layout_marginTop="18dp" android:gravity="center"
                     android:text="@string/settings_foot" android:textColor="#6B5FA8" android:textSize="12.5sp" />
             </LinearLayout>
+        </ScrollView>
+    </LinearLayout>
+    <!-- language sheet (prism-tide .sheet): in-window, opened from the 「翻譯」 card; height capped in code -->
+    <View
+        android:id="@+id/sheetScrim"
+        android:layout_width="match_parent" android:layout_height="match_parent"
+        android:alpha="0" android:background="#2E1E1B4B"
+        android:clickable="true" android:importantForAccessibility="no"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:id="@+id/sheet"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:clickable="true" android:clipChildren="false"
+        android:orientation="vertical" android:visibility="gone">
+        <LinearLayout
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingStart="22dp" android:paddingTop="12dp" android:paddingEnd="22dp" android:paddingBottom="10dp">
+            <View android:id="@+id/sheetGrip" android:layout_width="40dp" android:layout_height="4dp"
+                android:layout_gravity="center_horizontal" android:layout_marginBottom="12dp" />
+            <TextView android:id="@+id/sheetTitle" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:layout_marginTop="4dp" android:textColor="#1E1B4B" android:textSize="19sp" android:textStyle="bold" />
+            <TextView android:id="@+id/sheetSub" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:textColor="#6B5FA8" android:textSize="12.5sp" />
+        </LinearLayout>
+        <ScrollView
+            android:id="@+id/sheetScroll"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:scrollbars="none">
+            <LinearLayout android:id="@+id/sheetList"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingStart="10dp" android:paddingEnd="10dp" android:paddingBottom="22dp" />
         </ScrollView>
     </LinearLayout>
 </FrameLayout>

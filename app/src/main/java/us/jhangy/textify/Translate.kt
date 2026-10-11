@@ -102,7 +102,7 @@ object Translate {
 class TranslateRun internal constructor(
     private val app: Context,
     private val target: TargetLang,
-    private val onState: (Int, ParagraphState) -> Unit,
+    private var onState: ((Int, ParagraphState) -> Unit)?,   // cleared by close() so late download listeners do not pin the Activity
 ) {
     private var closed = false
     private val identifier = LanguageIdentification.getClient()
@@ -191,7 +191,7 @@ class TranslateRun internal constructor(
     }
 
     private fun report(i: Int, state: ParagraphState) {
-        if (!closed) onState(i, state)
+        if (!closed) onState?.invoke(i, state)
     }
 
     private fun closeIdentifier() {
@@ -204,6 +204,7 @@ class TranslateRun internal constructor(
     fun close() {
         if (closed) return
         closed = true
+        onState = null
         closeIdentifier()
         translators.forEach { it.close() }
         translators.clear()

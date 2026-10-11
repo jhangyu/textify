@@ -69,4 +69,22 @@
     <string name="chip_waiting_wifi">等待 Wi-Fi</string>
     <string name="chip_unsupported">不支援此語言</string>
     <string name="chip_failed">翻譯失敗</string>
+    <string name="tr_section">翻譯</string>
+    <string name="tr_section_hint">在擷取畫面按「譯」鍵才會翻譯</string>
+    <string name="tr_target">目標語言</string>
+    <string name="tr_target_sub">每段自動偵測來源語言</string>
+    <string name="tr_wifi">只用 Wi-Fi 下載</string>
+    <string name="tr_wifi_sub">使用行動網路時不下載語言模型</string>
+    <string name="tr_models">語言模型</string>
+    <string name="tr_models_hint">每次開啟設定時向系統查詢</string>
+    <string name="tr_predownload">預先下載語言</string>
+    <string name="tr_note">每個語言約 30MB，下載後可離線翻譯</string>
+    <string name="model_builtin">內建</string>
+    <string name="model_builtin_sub">隨 App 內建，無法刪除</string>
+    <string name="model_done_sub">已下載 · 可離線翻譯</string>
+    <string name="model_delete">刪除%1$s模型</string>
+    <string name="sheet_target_sub">翻譯結果會顯示成這個語言</string>
+    <string name="sheet_dl_sub">選一個語言開始下載，約 30MB</string>
+    <string name="sheet_done">已下載</string>
+    <string name="sheet_downloading">下載中</string>
 </resources>

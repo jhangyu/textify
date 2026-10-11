@@ -1,5 +1,6 @@
 package us.jhangy.textify
 
+import android.animation.LayoutTransition
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
@@ -12,9 +13,18 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.LayerDrawable
+import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.view.animation.PathInterpolator
+import android.widget.FrameLayout
+import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.Switch
+import android.widget.TextView
 import androidx.activity.SystemBarStyle
 import androidx.activity.addCallback
 import androidx.activity.enableEdgeToEdge
@@ -26,10 +36,11 @@ import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import androidx.core.view.isVisible
 import androidx.core.view.updatePadding
 import us.jhangy.textify.databinding.ActivitySettingsBinding
+import kotlin.math.roundToInt
 
 /**
  * Merged settings page (spec §7): overlay-permission card with the looping capture demo, and the
- * multi-select OCR language card. While it is visible the capture bubble is hidden (§5).
+ * multi-select OCR language card, and the translation card (translation spec §4). While it is visible the capture bubble is hidden (§5).
  */
 class SettingsActivity : AppCompatActivity() {
 
@@ -59,8 +70,9 @@ class SettingsActivity : AppCompatActivity() {
         stylePage()
         setupPermissionCard()
         setupLanguageCard()                         // C2
+        setupTranslateCard()                        // translation spec §4
         b.back.setOnClickListener { leave() }
-        onBackPressedDispatcher.addCallback(this) { leave() }
+        onBackPressedDispatcher.addCallback(this) { if (sheetMode != SheetMode.NONE) closeSheet() else leave() }
 
         // settingsIn 320 (0,0,.2,1): alpha 0 -> 1, scale 1.04 -> 1; then the preview lines light (§7.4)
         b.content.apply { alpha = 0f; scaleX = 1.04f; scaleY = 1.04f }
@@ -83,11 +95,14 @@ class SettingsActivity : AppCompatActivity() {
         if (returning) b.demo.flash()               // §7.3 return flash
         b.demo.resume()                             // no-op while denied
         main.postDelayed(recheck, RECHECK)
+        Translate.onModelsChanged = { refreshModels() }   // a session download may finish while Settings is open
+        refreshModels()                                    // spec §4: query ML Kit every time Settings opens
     }
 
     override fun onPause() {
         main.removeCallbacks(recheck)
         b.demo.pause()
+        Translate.onModelsChanged = null
         super.onPause()
     }
 
@@ -119,6 +134,7 @@ class SettingsActivity : AppCompatActivity() {
         b.back.background = pressed(oval(withAlpha(0.18f, 0xA78BFA)), null)
         b.permCard.background = HaloStyle.card(this)
         b.langCard.background = HaloStyle.card(this)
+        b.trCard.background = HaloStyle.card(this)
     }
 
     // ---- permission card (§7.2, §7.3) ----
@@ -232,6 +248,306 @@ class SettingsActivity : AppCompatActivity() {
         b.noteRest.animate().alpha(1f).setDuration(NOTE_FADE)
     }
 
+    // ---- translation card (translation spec §4, prism-tide #trCard) ----
+
+    private enum class SheetMode { NONE, TARGET, DOWNLOAD }
+
+    private var sheetMode = SheetMode.NONE
+    private var wifiOnly = true
+    private var lastRows: Map<String, ModelState> = emptyMap()
+
+    private fun setupTranslateCard() {
+        val rowBg = { pressed(round(withAlpha(0.12f, 0x7C3AED), 24 * d), round(withAlpha(0.06f, 0x7C3AED), 24 * d)) }
+        b.targetRow.background = rowBg()
+        b.wifiRow.background = rowBg()
+        b.modelWell.background = round(withAlpha(0.90f, 0xFAF5FF), 22 * d)
+        b.modelWell.layoutTransition = LayoutTransition().apply { setDuration(ROW_ANIM) }   // rowIn / rowOut 260
+        b.dlBtn.background = pressed(round(withAlpha(0.14f, 0x7C3AED), -1f), round(withAlpha(0.08f, 0x7C3AED), -1f))
+        b.wifiTrackOff.background = round(withAlpha(0.12f, 0x1E1B4B), -1f)
+        b.wifiTrackOn.background = CssGradientDrawable(intArrayOf(0xFFA78BFA.toInt(), 0xFFF472B6.toInt()), null, 90f, -1f)
+        b.wifiThumb.background = GlowDrawable(oval(Color.WHITE), withAlpha(0.25f, 0x1E1B4B), 3 * d, 1 * d, 0f, -1f)
+        b.sheet.background = sheetBackground()
+        b.sheetGrip.background = CssGradientDrawable(intArrayOf(0xFFA78BFA.toInt(), 0xFFF472B6.toInt(), 0xFFFDBA74.toInt()), null, 90f, 2 * d)
+        ViewCompat.setAccessibilityDelegate(b.wifiRow, object : AccessibilityDelegateCompat() {
+            override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfoCompat) {
+                super.onInitializeAccessibilityNodeInfo(host, info)
+                info.className = Switch::class.java.name
+                info.isCheckable = true
+                info.isChecked = wifiOnly
+            }
+        })
+        applyTarget(Prefs.target(this).key)
+        wifiOnly = Prefs.wifiOnly(this)
+        showWifi(animate = false)
+        b.targetRow.setOnClickListener { openSheet(SheetMode.TARGET) }
+        b.wifiRow.setOnClickListener {
+            wifiOnly = !wifiOnly
+            Prefs.setWifiOnly(this, wifiOnly)                 // saved at once
+            showWifi(animate = true)
+            if (!wifiOnly) {                                  // Wi-Fi-only off: retry what waited for Wi-Fi
+                Translate.waitingWifi.forEach { Translate.download(this, it) }
+                refreshModels()
+            }
+        }
+        b.dlBtn.setOnClickListener { openSheet(SheetMode.DOWNLOAD) }
+        b.sheetScrim.setOnClickListener { closeSheet() }
+    }
+
+    /** Shows the target in the target row (Task 10 also updates the preview here). */
+    private fun applyTarget(key: String) {
+        b.targetValue.text = Languages.targetTitle(key)
+    }
+
+    /** toggle 200 (.2,0,0,1): on track fades in, thumb slides 20dp. */
+    private fun showWifi(animate: Boolean) {
+        val x = if (wifiOnly) 20 * d else 0f
+        val a = if (wifiOnly) 1f else 0f
+        if (animate) {
+            b.wifiThumb.animate().translationX(x).setDuration(TOGGLE).setInterpolator(EMPHASIZED)
+            b.wifiTrackOn.animate().alpha(a).setDuration(TOGGLE)
+        } else {
+            b.wifiThumb.translationX = x
+            b.wifiTrackOn.alpha = a
+        }
+    }
+
+    /** Spec §4: the downloaded set comes from ML Kit every time; downloading / waiting come from Translate. */
+    private fun refreshModels() {
+        Translate.downloaded { done ->
+            if (!isDestroyed) renderModels(modelRows(done, Translate.downloading, Translate.waitingWifi))
+        }
+    }
+
+    /** Diffs [rows] into the well: removed / added rows animate (LayoutTransition), changed rows swap in place. */
+    private fun renderModels(rows: List<Pair<String, ModelState>>) {
+        val next = rows.toMap()
+        val well = b.modelWell
+        for (i in well.childCount - 1 downTo 0) if (well.getChildAt(i).tag !in next) well.removeViewAt(i)
+        rows.forEachIndexed { index, (code, state) ->
+            val existing = (0 until well.childCount).map { well.getChildAt(it) }.firstOrNull { it.tag == code }
+            if (existing == null) {
+                well.addView(modelRow(code, state), index)
+            } else if (lastRows[code] != state) {
+                val at = well.indexOfChild(existing)
+                val transition = well.layoutTransition
+                well.layoutTransition = null                  // state change: swap without the row animation
+                well.removeViewAt(at)
+                val row = modelRow(code, state)
+                well.addView(row, at)
+                well.layoutTransition = transition
+                if (lastRows[code] == ModelState.DOWNLOADING && state == ModelState.DONE) sparkle(row)
+            }
+        }
+        lastRows = next
+    }
+
+    /** prism-tide .mrow: 60dp, disc 38dp, title + small name, status line, right-side action / state. */
+    private fun modelRow(code: String, state: ModelState): View {
+        val waiting = state == ModelState.WAITING_WIFI
+        val row = LinearLayout(this).apply {
+            tag = code
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPaddingRelative(px(10f), 0, px(4f), 0)
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(60f))
+        }
+        row.addView(disc(code, 14f, waiting), LinearLayout.LayoutParams(px(38f), px(38f)))
+        val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val titleRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = true }
+        titleRow.addView(label(Languages.modelTitle(code), 15f, true, if (waiting) GREY else INK))
+        titleRow.addView(label(Languages.modelSub(code), 12f, true, if (waiting) GREY else SECONDARY).apply { setPaddingRelative(px(6f), 0, 0, 0) })
+        texts.addView(titleRow)
+        val sub = when (state) {
+            ModelState.BUILTIN -> R.string.model_builtin_sub
+            ModelState.DONE -> R.string.model_done_sub
+            ModelState.DOWNLOADING -> R.string.chip_downloading
+            ModelState.WAITING_WIFI -> R.string.chip_waiting_wifi
+        }
+        val subColor = when (state) { ModelState.DOWNLOADING -> VIOLET; ModelState.WAITING_WIFI -> GREY; else -> SECONDARY }
+        texts.addView(label(getString(sub), 12.5f, state == ModelState.DOWNLOADING, subColor))
+        row.addView(texts, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = px(12f) })
+        row.addView(modelAction(code, state))
+        return row
+    }
+
+    /** Right side of a model row: 內建 badge, trash (deletes at once, final pick), spinner, or wifi icon. */
+    private fun modelAction(code: String, state: ModelState): View = when (state) {
+        ModelState.BUILTIN -> label(getString(R.string.model_builtin), 12f, true, SECONDARY).apply {
+            setPadding(px(10f), px(4f), px(10f), px(4f))
+            background = round(withAlpha(0.10f, 0x7C3AED), -1f)
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                .apply { marginEnd = px(8f) }
+        }
+        ModelState.DONE -> FrameLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(px(44f), px(44f))
+            background = pressed(oval(withAlpha(0.16f, 0xF472B6)), null)
+            contentDescription = getString(R.string.model_delete, Languages.modelTitle(code))
+            isClickable = true
+            isFocusable = true
+            addView(ImageView(context).apply { setImageResource(R.drawable.ic_trash) }, FrameLayout.LayoutParams(px(20f), px(20f), Gravity.CENTER))
+            setOnClickListener { Translate.delete(code) { if (!isDestroyed) refreshModels() } }
+        }
+        ModelState.DOWNLOADING -> FrameLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(px(44f), px(44f))
+            addView(SpinnerRingView(context).apply { strokePx = 3 * d }, FrameLayout.LayoutParams(px(22f), px(22f), Gravity.CENTER))
+        }
+        ModelState.WAITING_WIFI -> FrameLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(px(44f), px(44f))
+            addView(ImageView(context).apply { setImageResource(R.drawable.ic_chip_wifi); setColorFilter(GREY) },
+                FrameLayout.LayoutParams(px(20f), px(20f), Gravity.CENTER))
+        }
+    }
+
+    /** Language disc: 135° gradient of Languages.discColors with a white glyph; grey when waiting for Wi-Fi. */
+    private fun disc(code: String, textSp: Float, grey: Boolean): TextView = TextView(this).apply {
+        text = Languages.glyph(code)
+        textSize = textSp
+        typeface = Typeface.DEFAULT_BOLD
+        gravity = Gravity.CENTER
+        includeFontPadding = false
+        maxLines = 1
+        setTextColor(if (grey) GREY else Color.WHITE)
+        background = if (grey) oval(GREY_DISC) else CssGradientDrawable(Languages.discColors(code), null, 135f, -1f)
+    }
+
+    private fun label(s: CharSequence, sp: Float, bold: Boolean, color: Int): TextView = TextView(this).apply {
+        text = s
+        textSize = sp
+        if (bold) typeface = Typeface.DEFAULT_BOLD
+        setTextColor(color)
+        maxLines = 1
+    }
+
+    private fun px(dp: Float): Int = (dp * d).roundToInt()
+
+    /** prism-tide sparkle 380: download done -> disc scale 1 -> 1.15 -> 1. */
+    private fun sparkle(row: View) {
+        val disc = (row as LinearLayout).getChildAt(0)
+        disc.animate().scaleX(1.15f).scaleY(1.15f).setDuration(SPARKLE * 45 / 100).withEndAction {
+            disc.animate().scaleX(1f).scaleY(1f).setDuration(SPARKLE * 55 / 100)
+        }
+    }
+
+    /** prism-tide .sheet: white 97 %, 28dp top corners, box-shadow 0 -12px 40px #4C1D95 22 %. */
+    private fun sheetBackground(): Drawable {
+        val r = 28 * d
+        val fill = GradientDrawable().apply {
+            setColor(withAlpha(0.97f, 0xFFFFFF))
+            cornerRadii = floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f)
+        }
+        return GlowDrawable(fill, withAlpha(0.22f, 0x4C1D95), 40 * d, -12 * d, 0f, r)
+    }
+
+    /** sheetIn 300 (decelerate) + scrim fade; at most 74 % of the screen (prism-tide .sheet max-height). */
+    private fun openSheet(mode: SheetMode) {
+        sheetMode = mode
+        b.sheetTitle.setText(if (mode == SheetMode.TARGET) R.string.tr_target else R.string.tr_predownload)
+        b.sheetSub.setText(if (mode == SheetMode.TARGET) R.string.sheet_target_sub else R.string.sheet_dl_sub)
+        fillSheet()
+        (b.sheet.layoutParams as FrameLayout.LayoutParams).topMargin = (b.root.height * (1f - SHEET_MAX)).roundToInt()
+        b.sheet.requestLayout()
+        b.sheetScroll.scrollTo(0, 0)
+        b.sheetScrim.visibility = View.VISIBLE
+        b.sheet.visibility = View.VISIBLE
+        b.sheetScrim.animate().cancel()
+        b.sheet.animate().cancel()
+        b.sheetScrim.animate().alpha(1f).setDuration(SHEET_IN).setInterpolator(EASE_OUT)
+        b.sheet.translationY = b.root.height.toFloat()
+        b.sheet.animate().translationY(0f).setDuration(SHEET_IN).setInterpolator(DECELERATE)
+    }
+
+    /** sheetOut 240 (accelerate); tap on the scrim or back. */
+    private fun closeSheet() {
+        if (sheetMode == SheetMode.NONE) return
+        sheetMode = SheetMode.NONE
+        b.sheetScrim.animate().alpha(0f).setDuration(SHEET_OUT).setInterpolator(EASE_IN)
+            .withEndAction { b.sheetScrim.visibility = View.GONE }
+        b.sheet.animate().translationY(b.sheet.height.toFloat()).setDuration(SHEET_OUT).setInterpolator(ACCELERATE)
+            .withEndAction { b.sheet.visibility = View.GONE }
+    }
+
+    private fun fillSheet() {
+        val list = b.sheetList
+        list.removeAllViews()
+        val langs = Translate.languages()
+        if (sheetMode == SheetMode.TARGET) {
+            val current = Prefs.target(this).key
+            for (key in TargetLang.keys(langs)) {
+                val selected = key == current
+                list.addView(sheetRow(Languages.targetTitle(key), Languages.targetSub(key), TargetLang.of(key).mlkit, radio(selected), selected, true) { pickTarget(key) })
+            }
+        } else {
+            for (code in TargetLang.modelKeys(langs)) {
+                val state = lastRows[code]
+                list.addView(sheetRow(Languages.modelTitle(code), Languages.modelSub(code), code, state?.let { stateLabel(it) }, false, state == null || state == ModelState.WAITING_WIFI) { pickDownload(code) })   // waiting rows stay pickable: download() re-checks the network
+            }
+        }
+    }
+
+    /** prism-tide .lrow: 58dp, radius 18dp, disc 34dp, title 15.5sp bold + sub 12.5sp, right-side view. */
+    private fun sheetRow(title: String, sub: String, discCode: String, right: View?, selected: Boolean, enabled: Boolean, onPick: () -> Unit): View {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPaddingRelative(px(12f), 0, px(14f), 0)
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(58f))
+            background = if (selected) round(withAlpha(0.07f, 0x7C3AED), 18 * d) else pressed(round(withAlpha(0.08f, 0x7C3AED), 18 * d), null)
+            isEnabled = enabled
+            if (enabled) setOnClickListener { onPick() }
+        }
+        row.addView(disc(discCode, 13f, false), LinearLayout.LayoutParams(px(34f), px(34f)))
+        val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        texts.addView(label(title, 15.5f, true, if (enabled) INK else GREY))
+        texts.addView(label(sub, 12.5f, false, SECONDARY))
+        row.addView(texts, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = px(12f) })
+        right?.let { row.addView(it) }
+        return row
+    }
+
+    /** prism-tide .radio: #7C3AED 12 % dot; selected = gradient #7C3AED -> #F472B6 with glow and a white centre. */
+    private fun radio(selected: Boolean): View = View(this).apply {
+        layoutParams = LinearLayout.LayoutParams(px(24f), px(24f))
+        background = if (!selected) oval(withAlpha(0.12f, 0x7C3AED)) else LayerDrawable(
+            arrayOf<Drawable>(
+                GlowDrawable(CssGradientDrawable(intArrayOf(0xFF7C3AED.toInt(), 0xFFF472B6.toInt()), null, 135f, -1f), withAlpha(0.45f, 0xF472B6), 12 * d, 0f, 0f, -1f),
+                oval(Color.WHITE),
+            ),
+        ).apply { setLayerInset(1, px(7f), px(7f), px(7f), px(7f)) }
+    }
+
+    /** Disabled download-sheet row state: 內建 / ✓ 已下載 / spinner 下載中 / 等待 Wi-Fi (12.5sp bold #6B5FA8). */
+    private fun stateLabel(state: ModelState): View = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        when (state) {
+            ModelState.DONE -> addView(ImageView(context).apply { setImageResource(R.drawable.ic_check) }, LinearLayout.LayoutParams(px(16f), px(16f)))
+            ModelState.DOWNLOADING -> addView(SpinnerRingView(context).apply { strokePx = 2.5f * d }, LinearLayout.LayoutParams(px(16f), px(16f)))
+            else -> Unit
+        }
+        val text = when (state) {
+            ModelState.BUILTIN -> R.string.model_builtin
+            ModelState.DONE -> R.string.sheet_done
+            ModelState.DOWNLOADING -> R.string.sheet_downloading
+            ModelState.WAITING_WIFI -> R.string.chip_waiting_wifi
+        }
+        addView(label(getString(text), 12.5f, true, SECONDARY).apply { setPaddingRelative(if (childCount > 0) px(6f) else 0, 0, 0, 0) })
+    }
+
+    private fun pickTarget(key: String) {
+        Prefs.setTarget(this, key)
+        applyTarget(key)
+        fillSheet()                                           // move the radio before the sheet leaves
+        main.postDelayed({ closeSheet() }, PICK_HOLD)
+    }
+
+    private fun pickDownload(code: String) {
+        closeSheet()
+        main.postDelayed({
+            Translate.download(this, code)
+            refreshModels()
+        }, SHEET_OUT)
+    }
+
     // ---- small drawables ----
     private fun round(color: Int, radiusPx: Float) = CssGradientDrawable.solid(color, radiusPx)
     private fun oval(color: Int) = CssGradientDrawable.solid(color, -1f)          // square views only -> circle
@@ -254,6 +570,22 @@ class SettingsActivity : AppCompatActivity() {
         private val EXIT = PathInterpolator(0.3f, 0f, 0.8f, 0.15f)   // settingsOut
         private val EASE_OUT = PathInterpolator(0f, 0f, 0.58f, 1f)   // msgIn
         private val EASE_IN = PathInterpolator(0.42f, 0f, 1f, 1f)    // msgOut
+        // translation card (prism-tide TIMINGS, ms)
+        private const val TOGGLE = 200L
+        private const val ROW_ANIM = 260L
+        private const val SPARKLE = 380L
+        private const val SHEET_IN = 300L
+        private const val SHEET_OUT = 240L
+        private const val PICK_HOLD = 220L
+        private const val SHEET_MAX = 0.74f
+        private val EMPHASIZED = PathInterpolator(0.2f, 0f, 0f, 1f)  // toggle thumb
+        private val DECELERATE = PathInterpolator(0f, 0f, 0.2f, 1f)  // sheetIn
+        private val ACCELERATE = PathInterpolator(0.4f, 0f, 1f, 1f)  // sheetOut
+        private val INK = 0xFF1E1B4B.toInt()
+        private val SECONDARY = 0xFF6B5FA8.toInt()
+        private val VIOLET = 0xFF7C3AED.toInt()
+        private val GREY = 0xFF8A86A0.toInt()
+        private val GREY_DISC = 0xFFE5E2EE.toInt()
 
         fun start(ctx: Context) {
             ctx.startActivity(
