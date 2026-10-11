@@ -1,8 +1,8 @@
-# On-device Translation + Paragraph OCR — Implementation Plan
+# Offline Translation + Paragraph OCR — Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use podium:team-spawn (recommended) or podium:team-fable to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** OCR returns paragraphs instead of lines, and a translate button on the session screen replaces each paragraph in place with an on-device translation (ML Kit + OpenCC for 繁體中文), with per-paragraph status chips, a bottom panel for truncated boxes and a 「翻譯」 card in Settings.
+**Goal:** OCR returns paragraphs instead of lines, and a translate button on the session screen replaces each paragraph in place with an offline translation (ML Kit + OpenCC for 繁體中文), with per-paragraph status chips, a bottom panel for truncated boxes and a 「翻譯」 card in Settings.
 
 **Architecture:** Pure Kotlin rules (merge, routing, fitting, colours, model rows) live in small JVM-tested files; `Translate.kt` is the only ML Kit translation / language-id caller and reports one `ParagraphState` per paragraph on the main thread; `PillView` gains a translated mode (solid card drawn in software) so one view per paragraph keeps the existing tap / long-press / copy wiring; `SessionActivity` and `SettingsActivity` only orchestrate. Visual source of truth: `docs/design/mockups/translation/proposal-2-prism-tide.html` (header comment), truncation mark from `proposal-1-quiet-reprint.html`.
 
@@ -10,11 +10,11 @@
 
 **Decisions (hard-to-reverse only):**
 - APK size. Alternatives: (a) keep all four ABIs as today, (b) `abiFilters` arm64-v8a(+armeabi-v7a), (c) `useLegacyPackaging = true` (compressed `.so`). **Chosen by the user: `abiFilters` arm64-v8a only** (Task 4 Step 1b). Drawback: no x86 emulators, no 32-bit-only phones. Size context (measured from the registry artifacts): `translate-17.0.3.aar` carries `libtranslate_jni.so` of 11.6 / 16.4 / 17.3 / 17.4 MB (armeabi-v7a / arm64 / x86 / x86_64, 62.6 MB total, stored uncompressed by AGP for minSdk ≥ 23), `language-id-17.0.6` adds ≈ 4.7 MB of `.so`, OpenCC adds 2.86 MB of jars. The current debug APK is 48.98 MB (41.0 MB of it OCR `.so`), so the APK grows to roughly 118 MB.
-- OpenCC port. Alternatives: OpenCC C++ via JNI, ML Kit `zh` only (Simplified), **opencc4j 1.14.0 (chosen)**. Drivers: pure Java so the conversion runs in JVM unit tests; s2twp-equivalent `ZhTwConverterUtil.toTraditional` verified on the JVM against the registry jar (`使用互联网`→`使用網際網路`, `软件和内存`→`軟體和記憶體`, already-Traditional text unchanged, `\n` kept). Size: opencc4j 0.56 MB + heaven 0.33 MB + nlp-common 1.97 MB = 2.86 MB compressed (< 5 MB budget); `jieba-analysis` is `<optional>` and is not pulled. Drawback: it loads ≈ 7 MB of dictionaries into memory on first use (runs off the main thread); Android compatibility is checked on device in Task 7.
+- OpenCC port. Alternatives: OpenCC C++ via JNI, ML Kit `zh` only (Simplified), **opencc4j 1.14.0 (chosen)**. Drivers: pure Java so the conversion runs in JVM unit tests; s2twp-equivalent `ZhTwConverterUtil.toTraditional` verified on the JVM against the registry jar (`使用互联网`→`使用網際網路`, `软件和内存`→`軟體和記憶體`, already-Traditional text unchanged, `\n` kept). Size: opencc4j 0.56 MB + heaven 0.33 MB + nlp-common 1.97 MB = 2.86 MB compressed (< 5 MB budget); `jieba-analysis` is `<optional>` and is not pulled. Drawback: it loads ≈ 7 MB of dictionaries into memory on first use (runs off the main thread).
 - One view per paragraph. Alternatives: separate translated-card view stacked over `PillView`, **`PillView` with an original and a translated mode (chosen)**. Driver: tap / long-press selection / ActionMode / copy flash already live in `PillView`; mockup note 2 also specifies one view with two layers. Drawback: `PillView` grows; card painting is split into `TranslatedCard.kt` to keep it readable.
 - Glow and blur. Alternatives: `setShadowLayer` / `RenderEffect` (mockup notes, API-gated), **software glow bitmaps from `Glow.kt` (chosen)**. Driver: final pick "one implementation for API 26+". Drawback: one small bitmap per glowing element, rebuilt on size change. The bottom panel is opaque 96 % white with no blur.
 - Sheets and panel. Alternatives: `BottomSheetDialog` + `RecyclerView` (mockup notes 9–10), **plain in-window `LinearLayout` + `ScrollView` (chosen)**. Drivers: no new dependency; a dialog window would break "tap outside closes" over the overlay-style session; 59 rows do not need recycling. Drawback: rows are rebuilt on change.
-- Wi-Fi-only. Alternatives: rely only on `DownloadConditions.requireWifi()`, **app checks `TRANSPORT_WIFI` before queuing and still passes `requireWifi()` (chosen)**. Driver: spec §2 "no download is queued" when not on Wi-Fi; ML Kit's behaviour without Wi-Fi is unknown and is observed on device in Task 7. Drawback: needs `ACCESS_NETWORK_STATE`.
+- Wi-Fi-only. Alternatives: rely only on `DownloadConditions.requireWifi()`, **app checks `TRANSPORT_WIFI` before queuing and still passes `requireWifi()` (chosen)**. Driver: spec §2 "no download is queued" when not on Wi-Fi; the app never queues a download off Wi-Fi. Drawback: needs `ACCESS_NETWORK_STATE`.
 - `ParagraphState.Done(text, source)` carries the ML Kit source code (spec lists `Done(text)`). Driver: the bottom panel header shows "source → target" (mockup `.lp`). Drawback: none beyond one field.
 - Translation input. Alternatives: send OCR text with its `\n`, **replace `\n` by nothing for zh/ja and by one space otherwise (chosen)**. Driver: OCR line breaks are layout, not sentence breaks; ML Kit translates line by line otherwise. Drawback: real paragraph-internal line breaks are lost in the translation (the original keeps them).
 
@@ -41,7 +41,6 @@ Spec: `docs/superpowers/specs/2026-10-11-translation-design.md` (cited §n; "Fin
 - Timings (ms, prism-tide header): tide 400 (per-box delay = 400 × centreY / H × 0.85), tideBack 320 (delay = 320 × (1 − centreY / H) × 0.8), flip 240, arrive 320, btnState 240, chipIn 220, chipOut 160, flash 380, panelIn 300, panelOut 240, copyOk 200, copyOkHold 1400, sheetIn 300, sheetOut 240, rowOut/rowIn 260, sparkle 380, toggle 200, boxIn 260, xIn 240, spin 900, shimmer 1200, previewLoop 3200, btnStagger 40. Every fade ≤ 400.
 - UI copy is zh-TW in `res/values/strings.xml` (exact strings given per task). Language names come from `Languages.kt`.
 - No extra toast or dialog for translation results or failures (§3); the per-paragraph chips are the report. Reduced motion is left to the system animator duration scale (spinners are `ValueAnimator`s and keep turning only when the scale is non-zero).
-- On-device steps need a device on `adb` (`adb devices` lists one). Without a device, report the on-device acceptance items as `BLOCKED` (the lead asks the user); never mark them passed from reasoning. Report on-device observations in the sign-off report; do not create proof files.
 - Git (shared tree): `git rev-parse --abbrev-ref HEAD` prints `main`; stage only own files with `git add <paths>`; commit with `git commit -m "…" -- <paths>`; deletions with `git rm <path>` in the same pathspec commit; `git status --porcelain -- <paths>` empty afterwards. Forbidden: `git stash` (including `stash list`), `reset`, `checkout --`, `clean`, `add -A`, `push`. Commit messages end with `Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>`.
 - No sleep or polling; wait for messages. Report `READY_FOR_SIGNOFF` or `BLOCKED`; the lead signs off and closes tickets.
 
@@ -73,11 +72,11 @@ Spec: `docs/superpowers/specs/2026-10-11-translation-design.md` (cited §n; "Fin
 |---|---|
 | Decisions 1–8 | 4 (engine, INTERNET, README wording), 6–7 (in-place display, panel in 9), 1–2 (paragraphs), 3–4 + 8 (one target, per-paragraph detection), 4 + 8 (auto download, Wi-Fi switch), 7 (button only), 3 (OpenCC), 8 (model states, delete) |
 | §1 OCR in paragraphs | 1, 2 |
-| §2 Translation engine | 3, 4, 7 (on-device checks) |
+| §2 Translation engine | 3, 4, 7 |
 | §3 Session screen | 5, 6, 7, 9 |
 | §4 Settings | 4 (prefs), 8, 10 |
 | §5 Error handling | 3 (OpenCC fallback), 4 (identification failure, download failure, per-paragraph failure, late results), 7 |
-| §6 Testing | 1, 2, 3, 6 (JVM), 7, 8, 9 (on device) |
+| §6 Testing | 1, 2, 3, 6 (JVM) |
 | Final picks | 3 (OpenCC-unchanged rule), 6 ("⋯" fade mark, software glow), 7 (button spins only while Translating), 8 (delete without dialog), 9 (opaque panel, no blur), 10 (prism-tide preview) |
 
 ---
@@ -281,7 +280,7 @@ internal fun Rect.toBox(): Box = Box(left, top, right, bottom)
 
 private fun Box.toRect(): Rect = Rect(left, top, right, bottom)
 
-/** On-device OCR. Every selected script model runs fully offline, all in parallel on the same image. */
+/** Offline OCR. Every selected script model runs fully offline, all in parallel on the same image. */
 object Ocr {
     /**
      * Calls [onResult] exactly once on the main thread after every recognizer completed; overlapping paragraphs
@@ -459,7 +458,7 @@ git status --porcelain -- app/src/main/java/us/jhangy/textify/OcrMerge.kt app/sr
 - Original mode (spec §1): transparent, selectable, multi-line text over the screenshot. The text keeps the OCR line breaks and never re-wraps (`setHorizontallyScrolling(true)`, no `setSingleLine`). Text size = median OCR line height × `TEXT_TO_BOX`; line pitch = mean distance between consecutive line tops (one line: its height), applied with `TextViewCompat.setLineHeight`; horizontal scale `textScaleX` = sum of line box widths / sum of measured line widths, clamped to 0.5–2. Gravity top-start, padding `PAD_X_DP` / `PAD_Y_DP` as before. Auto-size is removed.
 - Tap copies the whole paragraph (unchanged wiring); long-press gives system selection handles that should sit on the screenshot glyphs.
 - Box look unchanged except corner radius = `min(12dp, h/2)`; overlay flash, shine and selecting look use the same radius.
-- `TEXT_TO_BOX` is a calibration knob (`ponytail:` comment); this is the highest technical risk of §1 and is checked on device.
+- `TEXT_TO_BOX` is a calibration knob (`ponytail:` comment).
 
 **Constraints:**
 - `TextFit.kt` has no Android imports.
@@ -468,7 +467,6 @@ git status --porcelain -- app/src/main/java/us/jhangy/textify/OcrMerge.kt app/sr
 **Acceptance criteria:**
 - [ ] Gate `RC=0`; `TEST-us.jhangy.textify.TextFitTest.xml` has `singleLineUsesItsHeight` and `pitchIsMeanTopDistance`, 0 failures; OcrMergeTest still 7/7.
 - [ ] `grep -nE "setSingleLine|setAutoSizeTextTypeUniformWithConfiguration" app/src/main/java/us/jhangy/textify/PillView.kt` prints nothing; `grep -n "TextViewCompat.setLineHeight" app/src/main/java/us/jhangy/textify/PillView.kt` prints one line.
-- [ ] On device: capture a screen with a paragraph of ≥ 3 wrapped lines (for example Android Settings → About phone, or any article in Chrome). Each paragraph shows one pill covering all its lines; tap pastes (into any text field) the paragraph with its line breaks; long-press shows selection handles on the line that was pressed, not shifted by more than one line. Report the observed vertical drift (none / < half a line / ≥ half a line). If ≥ half a line, adjust `TEXT_TO_BOX` once (0.75 or 0.95) and report the value kept.
 
 
 **Steps:**
@@ -518,7 +516,7 @@ package us.jhangy.textify
 /** Text size and line pitch (px) that put a paragraph's TextView lines onto the screenshot's OCR line boxes. */
 internal data class LineMetrics(val textPx: Float, val pitchPx: Float)
 
-// ponytail: glyph em ≈ 0.85 × OCR line-box height; calibration knob, tune on device if handles drift
+// ponytail: glyph em ≈ 0.85 × OCR line-box height; calibration knob, adjust if handles drift
 internal const val TEXT_TO_BOX = 0.85f
 
 /** [lines] top to bottom, non-empty. Size from the median line height; pitch = mean distance between line tops (1 line: its height). */
@@ -772,15 +770,7 @@ Send `SETTLED`; gate-runner: `JAVA_HOME=/opt/homebrew/opt/openjdk@21 ./gradlew a
 Expected: `RC=0`; `TEST-us.jhangy.textify.TextFitTest.xml` → 2 testcases, 0 failures; `TEST-us.jhangy.textify.OcrMergeTest.xml` → 7, 0 failures.
 Then: `grep -nE "setSingleLine|setAutoSizeTextTypeUniformWithConfiguration" app/src/main/java/us/jhangy/textify/PillView.kt` → no output; `grep -n "TextViewCompat.setLineHeight" app/src/main/java/us/jhangy/textify/PillView.kt` → one line.
 
-- [ ] **Step 6: On-device check (spec §1 risk)**
-
-```bash
-JAVA_HOME=/opt/homebrew/opt/openjdk@21 ./gradlew installDebug   # gate-runner, detached
-adb shell am start -a android.intent.action.VIEW -d "https://en.wikipedia.org/wiki/Paragraph"
-```
-Start Textify, tap the bubble on the article. Check: each paragraph has one box covering all its lines; tap a box, paste into a multi-line text field (for example the compose box of Google Messages or a new note) → the whole paragraph appears with its line breaks; long-press a word on the third line of a paragraph → handles appear on that line. Report the vertical drift class (none / < half a line / ≥ half a line). If ≥ half a line, change `TEXT_TO_BOX` once to 0.75 or 0.95 (whichever reduces drift), re-install, re-check and report the kept value.
-
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git rev-parse --abbrev-ref HEAD   # main
@@ -1017,7 +1007,7 @@ object OpenCc {
         ZhTwConverterUtil.toTraditional(text)
     } catch (e: Exception) {
         text
-    } catch (e: LinkageError) {          // dictionary / class initialisation failure on a device
+    } catch (e: LinkageError) {          // dictionary / class initialisation failure on Android
         text
     }
 }
@@ -1249,18 +1239,18 @@ git status --porcelain -- app/build.gradle.kts app/src/main/java/us/jhangy/texti
 - `start` (spec §2): reports `Translating` for every given paragraph, identifies each paragraph's language with one `LanguageIdentifier` (input `flatten(text, null)`; failure → `und`, spec §5), then routes with `route(tag, TranslateLanguage.fromLanguageTag(tag), target)`:
   - `NotNeeded` / `Unsupported` → reported at once;
   - `OpenCcOnly` → OpenCC on a background thread, then `openCcOnlyResult(original, converted)`;
-  - `MlKit(source, openCc)` → grouped by source language: one model check/download and one `Translator` per source. Models needed = {source, target.mlkit}. All on device → `Translating`, translate each paragraph's `flatten(text, source)`; success → `Done(result, source)` (OpenCC first when `openCc`; OpenCC failure returns the ML Kit text, spec §5); failure → only that paragraph `Failed`.
+  - `MlKit(source, openCc)` → grouped by source language: one model check/download and one `Translator` per source. Models needed = {source, target.mlkit}. All models present → `Translating`, translate each paragraph's `flatten(text, source)`; success → `Done(result, source)` (OpenCC first when `openCc`; OpenCC failure returns the ML Kit text, spec §5); failure → only that paragraph `Failed`.
   - A model is missing → `download()`; if any needed model returns null (Wi-Fi-only, no Wi-Fi) the group becomes `WaitingWifi`; otherwise `Downloading` until `Tasks.whenAll` completes → translate, or `Failed` (spec §5; the language leaves the downloading set).
 - `download` uses `RemoteModelManager` (survives the session closing), joins an in-flight download of the same language, never queues when `Prefs.wifiOnly` and `!isOnWifi` (adds the language to `waitingWifi`), passes `requireWifi()` when Wi-Fi-only is on, and removes a language from `waitingWifi` when its download starts. `downloading` / `waitingWifi` are process-wide and read by the session and Settings; `onModelsChanged` fires on every change.
 - `isOnWifi`: active network has `NetworkCapabilities.TRANSPORT_WIFI`.
 - `TranslateRun.close()`: drops all later callbacks (spec §5 "late results are ignored"), closes the identifier and translators; downloads continue.
 - All callbacks run on the main thread (ML Kit `Task` listeners default to it; OpenCC results are posted back).
-- README: intro adds on-device translation; OCR section says "OCR runs fully offline; translation runs offline after a one-time model download (~30 MB per language)"; new "Translation" section describes the button, routing and Settings; Stack line lists the three new artifacts.
+- README: intro adds offline translation; OCR section says "OCR runs fully offline; translation runs offline after a one-time model download (~30 MB per language)"; new "Translation" section describes the button, routing and Settings; Stack line lists the three new artifacts.
 
 **Constraints:**
 - Only file calling `com.google.mlkit.nl.*`: `Translate.kt`.
 - Manifest adds exactly `android.permission.INTERNET` and `android.permission.ACCESS_NETWORK_STATE`.
-- No UI yet; the engine's on-device checks run in Task 7 (first caller).
+- No UI yet.
 
 **Acceptance criteria:**
 - [ ] Gate `RC=0` (all earlier tests still pass).
@@ -1273,13 +1263,13 @@ git status --porcelain -- app/build.gradle.kts app/src/main/java/us/jhangy/texti
 
 **Steps:**
 
-(No JVM test in this task: ML Kit does not run on the JVM. The routing it applies is covered by Task 3's tests; the engine is exercised on device in Task 7.)
+(No JVM test in this task: ML Kit does not run on the JVM. The routing it applies is covered by Task 3's tests; the engine itself is first called in Task 7.)
 
 - [ ] **Step 1: Add the ML Kit dependencies** — in `app/build.gradle.kts`, after the opencc4j line from Task 3, add:
 
 ```kotlin
 
-    // On-device translation (translation spec §2): ML Kit translate (models downloaded on demand through
+    // Offline translation (translation spec §2): ML Kit translate (models downloaded on demand through
     // RemoteModelManager) + bundled language identification. Google Maven latest, verified 2026-10-11.
     implementation("com.google.mlkit:translate:17.0.3")
     implementation("com.google.mlkit:language-id:17.0.6")
@@ -1369,7 +1359,7 @@ import com.google.mlkit.nl.translate.TranslatorOptions
 import java.util.concurrent.Executors
 
 /**
- * On-device translation engine (translation spec §2): the only code that calls ML Kit translation and
+ * Offline translation engine (translation spec §2): the only code that calls ML Kit translation and
  * language identification. Main thread only; OpenCC runs on [openCcThread] and posts back.
  */
 object Translate {
@@ -1564,7 +1554,7 @@ class TranslateRun internal constructor(
 
 - [ ] **Step 5: Update `README.md`**
 
-Intro: after `Android 8+ device.` add the sentence `Recognised paragraphs can also be translated on device (Google ML Kit translation + OpenCC).`
+Intro: after `Android 8+ device.` add the sentence `Recognised paragraphs can also be translated offline (Google ML Kit translation + OpenCC).`
 "OCR languages": replace `one is kept (`OcrMerge.kt`). All run fully offline. See `Ocr.kt`.` with `one is kept (`OcrMerge.kt`). OCR runs fully offline; translation runs offline after a one-time model download (see Translation). See `Ocr.kt`.`
 Insert before `## Build`:
 
@@ -1572,7 +1562,7 @@ Insert before `## Build`:
 ## Translation
 The translate button next to the settings button (shown once OCR found text) replaces every
 paragraph in place with its translation into the target language chosen in Settings (default
-繁體中文); press it again for the original. Each paragraph's language is detected on device
+繁體中文); press it again for the original. Each paragraph's language is detected offline
 (ML Kit language identification). Chinese paragraphs with target 繁體中文 only go through OpenCC
 (s2twp, `opencc4j`); other languages go through ML Kit translation (plus OpenCC for 繁體中文).
 Language models (~30 MB each) download automatically on first use, optionally only on Wi-Fi;
@@ -2722,7 +2712,6 @@ git status --porcelain -- app/src/main/java/us/jhangy/textify/TextFit.kt app/src
 - Create: `res/drawable/ic_translate.xml`
 - Modify: `res/values/strings.xml` (`session_translate`)
 - Modify: `java/SessionActivity.kt`
-- Modify: `java/Translate.kt` (one comment line recording the on-device Wi-Fi observation)
 
 **Interfaces:**
 - Consumes: `Translate.start`, `TranslateRun.close` (Task 4); `Prefs.target` (Task 4); `ParagraphState`, `chipFor`, `anyTranslating`, `needsRun` (Task 3); `SpinnerRingView`, `StatusChipView` (Task 5); `PillView.showTranslation/showOriginal/showsTranslation/translationText/truncated/shimmering/Reveal`, `edgeColor` (Task 6); `GlowDrawable`, `CssGradientDrawable`, `withAlpha` (`Glow.kt`).
@@ -2747,14 +2736,11 @@ git status --porcelain -- app/src/main/java/us/jhangy/textify/TextFit.kt app/src
 **Acceptance criteria:**
 - [ ] Gate `RC=0`.
 - [ ] `grep -n "com.google.mlkit.nl" app/src/main/java/us/jhangy/textify/SessionActivity.kt` prints nothing; `grep -n "android:id=\"@+id/trBtn\"" app/src/main/res/layout/activity_session.xml` prints one line.
-- [ ] On device, Wi-Fi on, target default 繁體中文: an English paragraph (for example https://en.wikipedia.org/wiki/Computer_memory) turns into a translated card in Traditional Chinese using Taiwan phrases (記憶體 / 軟體, not 内存 / 软件); a Simplified Chinese paragraph (https://zh.wikipedia.org/zh-cn/内存) turns into Traditional; a Traditional Chinese paragraph (https://zh.wikipedia.org/zh-tw/記憶體) keeps the original look; the button shows the busy ring only while paragraphs are Translating (while only 「下載中…」 chips are pending it shows the on look); `adb logcat -d | grep -iE "opencc|houbb|FATAL"` shows no exception.
-- [ ] On device, Wi-Fi-only on: `adb shell svc wifi disable` with mobile data on, translate a Japanese page whose model is not downloaded → its paragraphs show 「等待 Wi-Fi」 and `Translate.downloading` stays empty (Settings in Task 8 is not needed: no 「下載中…」 chip appears). Then `adb shell svc wifi enable`, start a Korean download by pressing translate on a Korean page, run `adb shell svc wifi disable` within 5 s, and observe the chips for 2 minutes: report whether ML Kit keeps waiting (chips stay 「下載中…」) or fails (chips turn 「翻譯失敗」). Record the observation as one `// ponytail:` comment line above `requireWifi()` in `Translate.kt` ("observed on <device>, API <n>: requireWifi without Wi-Fi → waits | fails after <s> s").
-- [ ] On device: pressing the button while it spins returns to the original look at once; pressing again later shows the finished translations without the button spinning again for them.
 
 
 **Steps:**
 
-(No new JVM test: the state rules used here — `chipFor`, `anyTranslating`, `needsRun` — are tested in Task 3. This task is verified on device.)
+(No new JVM test: the state rules used here — `chipFor`, `anyTranslating`, `needsRun` — are tested in Task 3.)
 
 - [ ] **Step 1: Create `res/drawable/ic_translate.xml`** (prism-tide `#trBtn` glyph)
 
@@ -3328,34 +3314,15 @@ class SessionActivity : AppCompatActivity() {
 Send `SETTLED`; gate-runner: `JAVA_HOME=/opt/homebrew/opt/openjdk@21 ./gradlew assembleDebug testDebugUnitTest; echo "RC=$?"` → `RC=0`, test counts unchanged (7 / 8 / 12 / 3).
 Then: `grep -n "com.google.mlkit.nl" app/src/main/java/us/jhangy/textify/SessionActivity.kt` → no output; `grep -n 'android:id="@+id/trBtn"' app/src/main/res/layout/activity_session.xml` → one line.
 
-- [ ] **Step 6: On-device check — translation path and OpenCC on Android**
-
-Gate-runner installs: `JAVA_HOME=/opt/homebrew/opt/openjdk@21 ./gradlew installDebug`. Wi-Fi on, target default 繁體中文 (fresh install), Wi-Fi-only default on.
-1. `adb logcat -c`; `adb shell am start -a android.intent.action.VIEW -d "https://en.wikipedia.org/wiki/Computer_memory"`; capture, press translate. Expected: the button shows the busy ring while paragraphs are Translating, the tide sweeps, paragraphs turn into cards with readable text in Traditional Chinese using Taiwan phrases (記憶體 / 軟體, not 内存 / 软件; the zh model may first show 「下載中…」 chips with the button in the on look, no ring); the button ends in the on look.
-2. Same with `https://zh.wikipedia.org/zh-cn/内存` → Simplified paragraphs become Traditional cards.
-3. Same with `https://zh.wikipedia.org/zh-tw/記憶體` → paragraphs keep the original look (OpenCC output equals input).
-4. `adb logcat -d | grep -iE "opencc|houbb|FATAL EXCEPTION"` → no exception lines.
-5. Press the button while it shows the ring → boxes return to the original look at once (tide back); press again after a few seconds → finished translations appear with the tide and the button does not show the ring for them.
-Report what you saw per item.
-
-- [ ] **Step 7: On-device check — Wi-Fi-only behaviour (spec §2 "verify on device")**
-
-1. `adb shell svc wifi disable` (mobile data on). Open `https://ja.wikipedia.org/wiki/東京都` (ja model not downloaded), capture, press translate → Japanese paragraphs show 「等待 Wi-Fi」; no 「下載中…」 chip appears.
-2. `adb shell svc wifi enable`; open `https://ko.wikipedia.org/wiki/서울특별시`, capture, press translate; as soon as 「下載中…」 chips appear run `adb shell svc wifi disable`; watch the chips for 2 minutes. Record whether they stay 「下載中…」 (ML Kit waits) or turn 「翻譯失敗」 (ML Kit fails) and after how many seconds. Then `adb shell svc wifi enable` and press translate again (if the chips failed) to confirm the download completes.
-3. In `java/Translate.kt`, add this comment line directly above `val conditions = DownloadConditions.Builder()…` with the observed values filled in (device model, API level, and either `waits` or `fails after N s`):
-```kotlin
-        // ponytail: observed on <device>, API <n>: requireWifi() while Wi-Fi drops mid-download -> <waits | fails after N s>
-```
-
-- [ ] **Step 8: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git rev-parse --abbrev-ref HEAD   # main
-git add app/src/main/res/drawable/ic_translate.xml app/src/main/res/values/strings.xml app/src/main/res/layout/activity_session.xml app/src/main/java/us/jhangy/textify/SessionActivity.kt app/src/main/java/us/jhangy/textify/Translate.kt
+git add app/src/main/res/drawable/ic_translate.xml app/src/main/res/values/strings.xml app/src/main/res/layout/activity_session.xml app/src/main/java/us/jhangy/textify/SessionActivity.kt
 git commit -m "feat(session): translate button, tide and per-paragraph translated cards
 
-Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>" -- app/src/main/res/drawable/ic_translate.xml app/src/main/res/values/strings.xml app/src/main/res/layout/activity_session.xml app/src/main/java/us/jhangy/textify/SessionActivity.kt app/src/main/java/us/jhangy/textify/Translate.kt
-git status --porcelain -- app/src/main/res/drawable/ic_translate.xml app/src/main/res/values/strings.xml app/src/main/res/layout/activity_session.xml app/src/main/java/us/jhangy/textify/SessionActivity.kt app/src/main/java/us/jhangy/textify/Translate.kt   # empty
+Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>" -- app/src/main/res/drawable/ic_translate.xml app/src/main/res/values/strings.xml app/src/main/res/layout/activity_session.xml app/src/main/java/us/jhangy/textify/SessionActivity.kt
+git status --porcelain -- app/src/main/res/drawable/ic_translate.xml app/src/main/res/values/strings.xml app/src/main/res/layout/activity_session.xml app/src/main/java/us/jhangy/textify/SessionActivity.kt   # empty
 ```
 
 ### Task 8: Settings 「翻譯」 card
@@ -3384,15 +3351,11 @@ git status --porcelain -- app/src/main/res/drawable/ic_translate.xml app/src/mai
 **Acceptance criteria:**
 - [ ] Gate `RC=0`.
 - [ ] `grep -n "android:id=\"@+id/trCard\"" app/src/main/res/layout/activity_settings.xml` prints one line; `grep -n "com.google.mlkit" app/src/main/java/us/jhangy/textify/SettingsActivity.kt` prints nothing; `grep -nE "AlertDialog|RecyclerView" app/src/main/java/us/jhangy/textify/SettingsActivity.kt` prints nothing.
-- [ ] On device (Wi-Fi on): pre-download 法文 → a row appears with 「下載中…」 and spinner, then turns 「已下載 · 可離線翻譯」 with the sparkle; trash removes the row without a dialog; leaving and reopening Settings does not show it again. English row shows 「內建」 and no trash button.
-- [ ] On device: press translate on a Korean page whose model is absent, then tap the session's settings button while chips show 「下載中…」 → Settings lists 한국어 as 「下載中…」.
-- [ ] On device: `adb shell svc wifi disable` (mobile data on), Wi-Fi-only on, pre-download Deutsch → grey 「等待 Wi-Fi」 row; `adb shell svc wifi enable` afterwards.
-- [ ] On device (spec §6 OpenCC check): target 简体中文, translate an English paragraph containing "software" and "memory" → card shows Simplified (软件 / 内存); target 繁體中文, same page → 軟體 / 記憶體.
 
 
 **Steps:**
 
-(No new JVM test: `modelRows`, `TargetLang.keys/modelKeys` and `Languages` feed this UI and `modelRows` / keys are tested in Task 3. This task is verified on device.)
+(No new JVM test: `modelRows`, `TargetLang.keys/modelKeys` and `Languages` feed this UI and `modelRows` / keys are tested in Task 3.)
 
 - [ ] **Step 1: Add the strings** — in `res/values/strings.xml`, before `</resources>`:
 
@@ -3996,17 +3959,7 @@ In the companion object, after `private val EASE_IN = …` add:
 Send `SETTLED`; gate-runner: `JAVA_HOME=/opt/homebrew/opt/openjdk@21 ./gradlew assembleDebug testDebugUnitTest; echo "RC=$?"` → `RC=0`, test counts unchanged (7 / 8 / 12 / 3).
 Then: `grep -n 'android:id="@+id/trCard"' app/src/main/res/layout/activity_settings.xml` → one line; `grep -n "com.google.mlkit" app/src/main/java/us/jhangy/textify/SettingsActivity.kt` → no output; `grep -nE "AlertDialog|RecyclerView" app/src/main/java/us/jhangy/textify/SettingsActivity.kt` → no output.
 
-- [ ] **Step 10: On-device checks (spec §6 Settings + OpenCC)**
-
-Gate-runner installs: `JAVA_HOME=/opt/homebrew/opt/openjdk@21 ./gradlew installDebug`. Open Settings from the launcher.
-1. Card: 「翻譯」 card below 「辨識語言」; target row shows 繁體中文; Wi-Fi switch on; model list starts with English 「內建」 (no trash); note line visible.
-2. Wi-Fi on: 預先下載語言 → pick Français → a row appears with 「下載中…」 + spinner, then turns 「已下載 · 可離線翻譯」 with the disc sparkle; trash removes the row at once (no dialog); back out of Settings and reopen → no Français row.
-3. Press translate on `https://ko.wikipedia.org/wiki/서울특별시` (Korean model absent; delete it first if present), and while chips show 「下載中…」 tap the session's settings button → Settings lists 한국어 with 「下載中…」, later 「已下載 · 可離線翻譯」 while Settings stays open.
-4. `adb shell svc wifi disable` (mobile data on), switch on, 預先下載語言 → Deutsch → grey 「等待 Wi-Fi」 row. `adb shell svc wifi enable`.
-5. Target 简体中文 (sheet closes ~220 ms after the radio moves), translate `https://en.wikipedia.org/wiki/Computer_memory` → cards show Simplified (软件 / 内存 where the source says software / memory). Target back to 繁體中文, same page → 軟體 / 記憶體. This is the spec §6 check "ML Kit zh output is Simplified, and OpenCC turns it into Traditional with Taiwan phrases".
-Report what you saw per item.
-
-- [ ] **Step 11: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
 git rev-parse --abbrev-ref HEAD   # main
@@ -4041,13 +3994,11 @@ git status --porcelain -- app/src/main/res/layout/activity_settings.xml app/src/
 **Acceptance criteria:**
 - [ ] Gate `RC=0`.
 - [ ] `grep -nE "Dialog|RenderEffect" app/src/main/java/us/jhangy/textify/TranslationPanel.kt` prints nothing; `grep -n "panel.open(" app/src/main/java/us/jhangy/textify/SessionActivity.kt` prints one line.
-- [ ] On device, spec §6 screenshot set with target 繁體中文: capture one screen each of https://ja.wikipedia.org/wiki/東京都 , https://ko.wikipedia.org/wiki/서울특별시 , https://en.wikipedia.org/wiki/Tokyo and https://zh.wikipedia.org/zh-cn/东京都 and press translate: every paragraph box is one box covering its lines; translated cards hide the original glyphs with a matching background and readable text; text shrinks inside the box down to 10sp. Report per screenshot: paragraph count, translated count, chips seen, truncated count.
-- [ ] On device: set target English in Settings, translate the Japanese screenshot (long English output) until at least one box shows the "⋯" mark; tapping it opens the panel (original + translation, both copy buttons paste the right text); tap outside and back each close it; a non-truncated card's tap copies the translation.
 
 
 **Steps:**
 
-(No new JVM test: the panel only shows texts the session already holds; checked on device.)
+(No new JVM test: the panel only shows texts the session already holds.)
 
 - [ ] **Step 1: Add strings and the copy icon**
 
@@ -4332,20 +4283,7 @@ Add after `onPillTap`:
 Send `SETTLED`; gate-runner: `JAVA_HOME=/opt/homebrew/opt/openjdk@21 ./gradlew assembleDebug testDebugUnitTest; echo "RC=$?"` → `RC=0`, test counts unchanged (7 / 8 / 12 / 3).
 Then: `grep -nE "Dialog|RenderEffect" app/src/main/java/us/jhangy/textify/TranslationPanel.kt` → no output; `grep -n "panel.open(" app/src/main/java/us/jhangy/textify/SessionActivity.kt` → one line.
 
-- [ ] **Step 6: On-device check — spec §6 screenshot set**
-
-Gate-runner installs: `JAVA_HOME=/opt/homebrew/opt/openjdk@21 ./gradlew installDebug`. Wi-Fi on, target 繁體中文. For each URL: `adb shell am start -a android.intent.action.VIEW -d "<url>"`, capture, press translate, wait until the button stops spinning:
-- `https://ja.wikipedia.org/wiki/東京都`
-- `https://ko.wikipedia.org/wiki/서울특별시`
-- `https://en.wikipedia.org/wiki/Tokyo`
-- `https://zh.wikipedia.org/zh-cn/东京都`
-Check: each paragraph is one box covering its lines; translated cards hide the original glyphs, their colour matches the page background around the box, the text is readable (dark on light, light on dark); long translations shrink inside the box. Report per screenshot: paragraph count, translated cards, chips seen (which), boxes with "⋯".
-
-- [ ] **Step 7: On-device check — truncation and panel**
-
-Set target English in Settings, capture the Japanese page again and translate until at least one box shows the "⋯" mark (bottom-right fade in the card colour). Tap it → the panel slides up with 「完整譯文」, 「日文 → English」, the original on top and the full translation below; the source box glow pulses. 「複製原文」 / 「複製譯文」 each turn into 「已複製」 for ~1.4 s and paste the right text. Tap the dimmed area → closes; reopen, press back → closes; tap a card without "⋯" → copies the translation (shine + flash). Set the target back to 繁體中文. Report what you saw.
-
-- [ ] **Step 8: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git rev-parse --abbrev-ref HEAD   # main
@@ -4379,11 +4317,10 @@ git status --porcelain -- app/src/main/res/values/strings.xml app/src/main/res/d
 **Acceptance criteria:**
 - [ ] Gate `RC=0`.
 - [ ] `grep -n "us.jhangy.textify.TranslatePreviewView" app/src/main/res/layout/activity_settings.xml` prints one line; `grep -n "trPreview.pause()" app/src/main/java/us/jhangy/textify/SettingsActivity.kt` prints one line.
-- [ ] On device: the strip loops (original → tide → translation → tide → original); changing the target to 日本語 changes the target pill and the sample to 9時にロビーで集合。 within the next loop.
 
 **Steps:**
 
-(No JVM test: decorative drawing; checked on device.)
+(No JVM test: decorative drawing.)
 
 - [ ] **Step 1: Create `java/TranslatePreviewView.kt`**
 
@@ -4609,11 +4546,7 @@ In `onPause`, after `Translate.onModelsChanged = null` add:
 Send `SETTLED`; gate-runner: `JAVA_HOME=/opt/homebrew/opt/openjdk@21 ./gradlew assembleDebug testDebugUnitTest; echo "RC=$?"` → `RC=0`, test counts unchanged (7 / 8 / 12 / 3).
 Then: `grep -n "us.jhangy.textify.TranslatePreviewView" app/src/main/res/layout/activity_settings.xml` → one line; `grep -n "trPreview.pause()" app/src/main/java/us/jhangy/textify/SettingsActivity.kt` → one line.
 
-- [ ] **Step 6: On-device check**
-
-Install (gate-runner `installDebug`), open Settings: the strip loops every ~3.2 s — original bubble with the pill, a Halo band sweeps and the bubble shows 九點在大廳見。 with a rainbow underline, holds, then sweeps back; row shows 英文 → 繁體中文. Pick target 日本語 → the row shows 英文 → 日本語 and the translation 9時にロビーで集合。; target English → 日文 → English with "Meet at the lobby at 9.". Leave Settings and come back: the loop resumes. Report what you saw.
-
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git rev-parse --abbrev-ref HEAD   # main

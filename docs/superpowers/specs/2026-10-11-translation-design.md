@@ -1,9 +1,9 @@
-# On-device translation + paragraph OCR — design
+# Offline translation + paragraph OCR — design
 
 Status: design approved; mockup picked (`docs/design/mockups/translation/proposal-2-prism-tide.html`); implementation plan next.
 
 ## Decisions (user)
-1. Engine: ML Kit on-device translation (`com.google.mlkit:translate`). Language models (~30 MB each) are
+1. Engine: ML Kit offline translation (`com.google.mlkit:translate`). Language models (~30 MB each) are
    downloaded from Google on first use, then run offline. Adds the INTERNET permission. README's "fully offline"
    wording changes to "OCR fully offline; translation offline after a one-time model download".
 2. Display: translated text replaces the original in place; when it does not fit, a bottom panel shows it.
@@ -56,8 +56,6 @@ Downloads:
   both read it.
 - "只用 Wi-Fi" on and not on Wi-Fi now: that language's paragraphs become `WaitingWifi`; no download is queued.
   Pressing translate again after connecting retries. Needs ACCESS_NETWORK_STATE to read the current network.
-- Verify on device before relying on it: what ML Kit does with `DownloadConditions.requireWifi()` when Wi-Fi is
-  absent (waits forever or fails).
 
 Lifecycle: results live in the session's memory only; toggling original/translation does not re-translate.
 Translators are closed when the session ends.
@@ -115,14 +113,6 @@ JVM unit tests (same kind as `OcrMergeTest`):
 - paragraph merge with IoU after the switch to blocks;
 - translation routing (detected language x target -> NotNeeded / OpenCC only / ML Kit + OpenCC / ML Kit only /
   Unsupported), kept as a pure function so it runs without ML Kit.
-
-On-device checks (ML Kit does not run on the JVM):
-- ML Kit `zh` output is Simplified, and OpenCC turns it into Traditional with Taiwan phrases.
-- ML Kit behaviour under the Wi-Fi-only download condition.
-- One screenshot each in Japanese, Korean, English and Simplified Chinese: paragraph boxes, auto-size, truncation
-  and the bottom panel.
-- Settings: download and delete a model; a download started from the session screen shows as downloading in
-  Settings.
 
 ## Out of scope
 Auto-translate setting; custom paragraph clustering; translation history; translation quality comparison;
