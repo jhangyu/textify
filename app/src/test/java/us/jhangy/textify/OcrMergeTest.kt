@@ -23,8 +23,8 @@ class OcrMergeTest {
 
     @Test
     fun iouExactlyHalfKeepsBoth() {
-        // IoU = 50 / 100 = 0.5 -> not > 0.5 -> both kept
-        val out = mergeOcr(listOf(c("a", 0, 0, 10, 10, 0.9f), c("b", 0, 0, 10, 5, 0.1f)))
+        // small box ranks first: IoU = 50 / 100 = 0.5 (not > 0.5), big box own-area coverage 0.5 (< 0.6) -> both kept
+        val out = mergeOcr(listOf(c("a", 0, 0, 10, 10, 0.1f), c("b", 0, 0, 10, 5, 0.9f)))
         assertEquals(setOf("a", "b"), out.map { it.text }.toSet())
     }
 
@@ -57,5 +57,18 @@ class OcrMergeTest {
     fun paragraphConfidenceIsLineMean() {
         assertEquals(0.5f, paragraphConfidence(listOf(0.25f, 0.75f)), 1e-6f)
         assertEquals(0f, paragraphConfidence(emptyList()), 0f)
+    }
+
+    @Test
+    fun smallBoxMostlyInsideKeptOneIsDropped() {
+        // IoU = 25 / 100 = 0.25 but 100% of the small box is covered
+        val out = mergeOcr(listOf(c("big", 0, 0, 10, 10, 0.9f), c("small", 0, 0, 5, 5, 0.4f)))
+        assertEquals(listOf("big"), out.map { it.text })
+    }
+
+    @Test
+    fun touchingSideBySideBoxesBothKept() {
+        val out = mergeOcr(listOf(c("l", 0, 0, 10, 10, 0.9f), c("r", 10, 0, 20, 10, 0.4f)))
+        assertEquals(listOf("l", "r"), out.map { it.text })
     }
 }

@@ -109,4 +109,10 @@ class TranslateRulesTest {
         )
         assertEquals(listOf("en" to ModelState.BUILTIN), modelRows(emptySet(), emptySet(), emptySet()))
     }
+
+    @Test
+    fun romanizedTagsAreUndetermined() {
+        assertEquals(Route.NotNeeded, route("ja-Latn", null, hant))
+        assertEquals(Route.NotNeeded, route("zh-Latn", "zh", hant))
+    }
 }

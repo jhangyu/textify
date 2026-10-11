@@ -57,11 +57,12 @@ sealed class Route {
 const val UNDETERMINED = "und"
 
 /**
- * [detected] = language-id tag ("und" when undetermined or identification failed, spec §5);
+ * [detected] = language-id tag ("und" when undetermined or identification failed, spec §5; romanized tags
+ * such as "ja-Latn" are treated as undetermined);
  * [mlkitSource] = TranslateLanguage.fromLanguageTag(detected), null when ML Kit cannot translate it.
  */
 internal fun route(detected: String, mlkitSource: String?, target: TargetLang): Route = when {
-    detected == UNDETERMINED -> Route.NotNeeded
+    detected == UNDETERMINED || detected.endsWith("-Latn") -> Route.NotNeeded
     mlkitSource == null -> Route.Unsupported
     mlkitSource == target.mlkit -> if (target.openCc) Route.OpenCcOnly else Route.NotNeeded
     else -> Route.MlKit(mlkitSource, target.openCc)
