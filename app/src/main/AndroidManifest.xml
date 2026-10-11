@@ -22,11 +22,15 @@
             </intent-filter>
         </activity>
 
+        <!-- Own task (taskAffinity="") so finishing returns to the app the user was in;
+             no screenOrientation: API 26 rejects fixed orientation on translucent activities. -->
         <activity
-            android:name=".ResultActivity"
-            android:exported="false"
+            android:name=".SessionActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density|fontScale|locale|layoutDirection|colorMode"
             android:excludeFromRecents="true"
-            android:theme="@style/Theme.Textify.Transparent" />
+            android:exported="false"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Textify.Session" />
 
         <service
             android:name=".CaptureService"

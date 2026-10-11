@@ -2,9 +2,18 @@
     <style name="Theme.Textify" parent="Theme.AppCompat.DayNight">
         <item name="colorPrimary">#3F6FFF</item>
     </style>
-    <style name="Theme.Textify.Transparent" parent="Theme.AppCompat.DayNight">
+
+    <!-- Capture session: translucent so the closeOut fade reveals the live app underneath;
+         no window animation (start uses FLAG_ACTIVITY_NO_ANIMATION, finish uses this style);
+         no preview window (avoids a flash before the screenshot is drawn);
+         selection handles tinted a2 violet (--handle #7C3AED). -->
+    <style name="Theme.Textify.Session" parent="Theme.AppCompat.Light.NoActionBar">
         <item name="android:windowIsTranslucent">true</item>
         <item name="android:windowBackground">@android:color/transparent</item>
-        <item name="android:backgroundDimEnabled">true</item>
+        <item name="android:windowAnimationStyle">@null</item>
+        <item name="android:windowDisablePreview">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="colorControlActivated">#7C3AED</item>
+        <item name="android:colorControlActivated">#7C3AED</item>
     </style>
 </resources>

@@ -11,8 +11,8 @@
     <string name="consent_denied">Screen-capture consent denied.</string>
     <string name="notif_title">Textify is running</string>
     <string name="no_text">No text found.</string>
-    <string name="copy">Copy</string>
-    <string name="close">Close</string>
-    <string name="copied">Copied to clipboard</string>
     <string name="hint">Tap Start, grant the two permissions, then tap the floating bubble over any screen to extract its text.</string>
+    <string name="session_no_text">No text detected</string>
+    <string name="session_no_text_sub">沒有偵測到文字 · tap ✕ to close</string>
+    <string name="session_close">Close capture session</string>
 </resources>
