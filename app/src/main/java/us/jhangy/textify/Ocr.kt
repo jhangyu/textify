@@ -13,16 +13,23 @@ import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
 import com.google.mlkit.vision.text.japanese.JapaneseTextRecognizerOptions
 import com.google.mlkit.vision.text.korean.KoreanTextRecognizerOptions
 
-/** One recognised text line. [box] is in screenshot (bitmap) pixels. */
-data class OcrLine(val text: String, val box: Rect)
+/**
+ * One recognised paragraph (ML Kit TextBlock). [text] = its lines joined with "\n"; [box] and the per-line
+ * [lines] (top to bottom) are in screenshot (bitmap) pixels.
+ */
+data class OcrBlock(val text: String, val box: Rect, val lines: List<Rect>)
+
+internal fun Rect.toBox(): Box = Box(left, top, right, bottom)
+
+private fun Box.toRect(): Rect = Rect(left, top, right, bottom)
 
 /** On-device OCR. Every selected script model runs fully offline, all in parallel on the same image. */
 object Ocr {
     /**
-     * Calls [onResult] exactly once on the main thread after every recognizer completed; overlapping lines
-     * are merged by [mergeOcr] (sorted top, then left). A failing recognizer contributes no lines.
+     * Calls [onResult] exactly once on the main thread after every recognizer completed; overlapping paragraphs
+     * are merged by [mergeOcr] (sorted top, then left). A failing recognizer contributes no paragraphs.
      */
-    fun recognize(ctx: Context, bitmap: Bitmap, scripts: Set<Script>, onResult: (List<OcrLine>) -> Unit) {
+    fun recognize(ctx: Context, bitmap: Bitmap, scripts: Set<Script>, onResult: (List<OcrBlock>) -> Unit) {
         val main = Handler(Looper.getMainLooper())
         val image = try {
             InputImage.fromBitmap(bitmap, 0)
@@ -37,7 +44,7 @@ object Ocr {
             parts[i] = found
             if (--pending == 0) {
                 onResult(mergeOcr(parts.flatMap { it.orEmpty() })
-                    .map { OcrLine(it.text, Rect(it.left, it.top, it.right, it.bottom)) })
+                    .map { c -> OcrBlock(c.text, c.box.toRect(), c.lines.map { it.toRect() }) })
             }
         }
         scripts.forEachIndexed { i, script ->
@@ -60,9 +67,14 @@ object Ocr {
         Script.KOREAN -> TextRecognition.getClient(KoreanTextRecognizerOptions.Builder().build())
     }
 
-    private fun candidates(result: Text): List<OcrCandidate> = result.textBlocks.flatMap { it.lines }.mapNotNull { line ->
-        val b = line.boundingBox
-        if (b == null || line.text.isBlank()) null
-        else OcrCandidate(line.text, b.left, b.top, b.right, b.bottom, line.confidence)   // Text.Line.getConfidence(), §12
+    /** Translation spec §1: one candidate per TextBlock; blank or box-less lines dropped; confidence = mean line confidence. */
+    private fun candidates(result: Text): List<OcrCandidate> = result.textBlocks.mapNotNull { block ->
+        val lines = block.lines.filter { it.boundingBox != null && it.text.isNotBlank() }
+        if (lines.isEmpty()) return@mapNotNull null
+        val boxes = lines.map { it.boundingBox!!.toBox() }
+        val box = block.boundingBox?.toBox() ?: Box(
+            boxes.minOf { it.left }, boxes.minOf { it.top }, boxes.maxOf { it.right }, boxes.maxOf { it.bottom },
+        )
+        OcrCandidate(lines.joinToString("\n") { it.text }, box, boxes, paragraphConfidence(lines.map { it.confidence }))
     }
 }

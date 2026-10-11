@@ -23,13 +23,13 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**
- * One OCR line as an a2 "Halo" pill. The text is real, selectable and transparent, sized to
+ * One OCR paragraph as an a2 "Halo" pill (single line until Task 2 of the translation plan). The text is real, selectable and transparent, sized to
  * roughly cover the glyphs in the screenshot, so long-press gives system handles + copy menu.
  * Tap is detected with GestureDetector: a selectable TextView is focusable in touch mode, so the
  * first tap would only take focus and never reach an OnClickListener.
  */
 @SuppressLint("ViewConstructor")
-class PillView(context: Context, val line: OcrLine) : AppCompatTextView(context) {
+class PillView(context: Context, val block: OcrBlock) : AppCompatTextView(context) {
 
     /** Single tap. dismissOnly = a text selection was alive when the finger went down. */
     var onTap: ((pill: PillView, dismissOnly: Boolean) -> Unit)? = null
@@ -71,7 +71,7 @@ class PillView(context: Context, val line: OcrLine) : AppCompatTextView(context)
     })
 
     init {
-        text = line.text
+        text = block.text
         setTextColor(Color.TRANSPARENT)
         highlightColor = withAlpha(0.26f, 0x7C3AED)
         setTextIsSelectable(true)
@@ -82,7 +82,7 @@ class PillView(context: Context, val line: OcrLine) : AppCompatTextView(context)
         val px = (PAD_X_DP * dp).roundToInt()
         val py = (PAD_Y_DP * dp).roundToInt()
         setPadding(px, py, px, py)
-        setAutoSizeTextTypeUniformWithConfiguration(4, max(5, line.box.height()), 1, TypedValue.COMPLEX_UNIT_PX)
+        setAutoSizeTextTypeUniformWithConfiguration(4, max(5, block.lines.maxOf { it.height() }), 1, TypedValue.COMPLEX_UNIT_PX)
         alpha = 0f
         scaleX = 0.9f
         scaleY = 0.9f

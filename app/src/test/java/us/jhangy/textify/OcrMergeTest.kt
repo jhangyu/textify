@@ -5,7 +5,8 @@ import org.junit.Test
 
 class OcrMergeTest {
 
-    private fun c(text: String, l: Int, t: Int, r: Int, b: Int, conf: Float) = OcrCandidate(text, l, t, r, b, conf)
+    private fun c(text: String, l: Int, t: Int, r: Int, b: Int, conf: Float) =
+        OcrCandidate(text, Box(l, t, r, b), listOf(Box(l, t, r, b)), conf)
 
     @Test
     fun overlapAboveHalfKeepsHigherConfidence() {
@@ -28,7 +29,7 @@ class OcrMergeTest {
     }
 
     @Test
-    fun disjointLinesBothKept() {
+    fun disjointParagraphsBothKept() {
         val out = mergeOcr(listOf(c("a", 0, 0, 10, 10, 0.9f), c("b", 0, 20, 10, 30, 0.9f)))
         assertEquals(2, out.size)
     }
@@ -43,5 +44,18 @@ class OcrMergeTest {
             ),
         )
         assertEquals(listOf("topLeft", "topRight", "bottom"), out.map { it.text })
+    }
+
+    @Test
+    fun winnerKeepsItsLines() {
+        val twoLines = OcrCandidate("a\nb", Box(0, 0, 10, 20), listOf(Box(0, 0, 10, 10), Box(0, 10, 10, 20)), 0.9f)
+        val out = mergeOcr(listOf(c("x", 0, 0, 10, 20, 0.1f), twoLines))
+        assertEquals(listOf(twoLines), out)
+    }
+
+    @Test
+    fun paragraphConfidenceIsLineMean() {
+        assertEquals(0.5f, paragraphConfidence(listOf(0.25f, 0.75f)), 1e-6f)
+        assertEquals(0f, paragraphConfidence(emptyList()), 0f)
     }
 }

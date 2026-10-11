@@ -16,8 +16,8 @@ Android 8+ device.
    bubble fades it out, takes the latest frame and opens `SessionActivity`.
    Dragging the bubble onto the bottom target ends the service.
 3. `SessionActivity` freezes the screen: the screenshot is shown 1:1 under hidden
-   system bars with an edge glow while `Ocr` runs, then every recognised line
-   becomes a pill. Tap a pill to copy the line (the pill shines and flashes);
+   system bars with an edge glow while `Ocr` runs, then every recognised paragraph
+   becomes a pill. Tap a pill to copy the paragraph (the pill shines and flashes);
    long-press for partial selection with the system copy menu. X or back closes
    the session and the bubble returns. The settings button next to X closes the
    session and opens `SettingsActivity`.
@@ -28,7 +28,7 @@ Android 8+ device.
 ## OCR languages
 Multi-select, at least one: Chinese (Traditional and Simplified), Japanese, Korean —
 chosen in Settings. Every model also reads Latin/English. All selected models run in
-parallel on the same screenshot; where two lines overlap (IoU > 0.5) the higher-confidence
+parallel on the same screenshot; where two paragraphs overlap (IoU > 0.5) the higher-confidence
 one is kept (`OcrMerge.kt`). All run fully offline. See `Ocr.kt`.
 `// ponytail:` ML Kit picks its own compute backend (CPU/GPU via NNAPI); it
 exposes no NPU/int4 control. Upgrade path if speed matters: swap in a

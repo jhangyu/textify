@@ -41,7 +41,7 @@ import kotlin.math.roundToLong
 
 /**
  * Frozen-screen capture session (a2 "Halo"). Screenshot 1:1 under hidden system bars, edge glow +
- * scrim while OCR runs, then one selectable pill per OCR line. Tap pill = copy line, long-press =
+ * scrim while OCR runs, then one selectable pill per OCR paragraph. Tap pill = copy paragraph, long-press =
  * system selection, X/back = closeOut fade, then CaptureService brings the bubble back.
  * Settings button = session fades out and SettingsActivity opens (bubble stays hidden).
  */
@@ -98,10 +98,10 @@ class SessionActivity : AppCompatActivity() {
         b.scrim.background = scrimDrawable()
         b.scrim.animate().alpha(1f).setStartDelay(SCRIM_DELAY).setDuration(SCRIM_IN).setInterpolator(EASE_OUT)
         ocrRunning = true
-        Ocr.recognize(this, bmp, Prefs.scripts(this)) { lines -> runOnUiThread { onOcr(lines) } }
+        Ocr.recognize(this, bmp, Prefs.scripts(this)) { found -> runOnUiThread { onOcr(found) } }
     }
 
-    private fun onOcr(lines: List<OcrLine>) {
+    private fun onOcr(found: List<OcrBlock>) {
         ocrRunning = false
         if (isDestroyed) {                    // session already gone: the bitmap is ours to free now
             shot?.recycle()
@@ -113,24 +113,24 @@ class SessionActivity : AppCompatActivity() {
             b.scrim.animate().cancel()
             b.scrim.animate().alpha(0f).setStartDelay(0L).setDuration(SCRIM_OUT).setInterpolator(EASE_IN)
             b.glow.settle()
-            if (lines.isEmpty()) showHint() else showPills(lines)
+            if (found.isEmpty()) showHint() else showPills(found)
         }
     }
 
-    private fun showPills(lines: List<OcrLine>) {
+    private fun showPills(found: List<OcrBlock>) {
         val padX = (PillView.PAD_X_DP * resources.displayMetrics.density).roundToInt()
         val padY = (PillView.PAD_Y_DP * resources.displayMetrics.density).roundToInt()
-        val sorted = lines.sortedWith(compareBy({ it.box.top }, { it.box.left }))
+        val sorted = found.sortedWith(compareBy({ it.box.top }, { it.box.left }))
         val n = sorted.size
-        sorted.forEachIndexed { i, line ->
-            val pill = PillView(this, line)
-            pill.layoutParams = FrameLayout.LayoutParams(line.box.width() + 2 * padX, line.box.height() + 2 * padY).apply {
-                leftMargin = line.box.left - padX - origin[0]
-                topMargin = line.box.top - padY - origin[1]
+        sorted.forEachIndexed { i, block ->
+            val pill = PillView(this, block)
+            pill.layoutParams = FrameLayout.LayoutParams(block.box.width() + 2 * padX, block.box.height() + 2 * padY).apply {
+                leftMargin = block.box.left - padX - origin[0]
+                topMargin = block.box.top - padY - origin[1]
             }
             pill.selectionActive = { actionMode != null }
             pill.onTap = { p, dismissOnly ->
-                if (dismissOnly) actionMode?.finish() else copyLine(p, p.line.text)
+                if (dismissOnly) actionMode?.finish() else copyText(p, p.block.text)
             }
             pill.customSelectionActionModeCallback = selectionCallback(pill)
             b.pills.addView(pill)
@@ -163,7 +163,7 @@ class SessionActivity : AppCompatActivity() {
         }
     }
 
-    private fun copyLine(pill: PillView, text: String) {
+    private fun copyText(pill: PillView, text: String) {
         (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("textify", text))
         copied(pill)
     }
