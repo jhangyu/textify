@@ -4,7 +4,6 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Typeface
 import android.view.Gravity
-import android.view.animation.PathInterpolator
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -46,7 +45,7 @@ class StatusChipView(context: Context) : LinearLayout(context) {
         chip = kind
         animate().cancel()
         if (kind == null) {
-            animate().alpha(0f).setStartDelay(delayMs).setDuration(CHIP_OUT).setInterpolator(EASE_IN)
+            animate().alpha(0f).setStartDelay(delayMs).setDuration(CHIP_OUT).setInterpolator(Easing.EASE_IN)
                 .withEndAction { visibility = GONE }
             return
         }
@@ -58,7 +57,7 @@ class StatusChipView(context: Context) : LinearLayout(context) {
             scaleY = 0.9f
         }
         animate().alpha(1f).translationY(0f).scaleX(1f).scaleY(1f)
-            .setStartDelay(delayMs).setDuration(CHIP_IN).setInterpolator(OVERSHOOT)
+            .setStartDelay(delayMs).setDuration(CHIP_IN).setInterpolator(Easing.OVERSHOOT)
     }
 
     private fun bind(kind: Chip) {
@@ -91,7 +90,5 @@ class StatusChipView(context: Context) : LinearLayout(context) {
         private val WAITING = 0xFF8A86A0.toInt()
         private val SECONDARY = 0xFF6B5FA8.toInt()
         private val FAILED = 0xFF9A3412.toInt()
-        private val OVERSHOOT = PathInterpolator(0.2f, 0f, 0f, 1.3f)   // prism-tide chipIn transform
-        private val EASE_IN = PathInterpolator(0.42f, 0f, 1f, 1f)      // chipOut
     }
 }

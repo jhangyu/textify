@@ -86,7 +86,7 @@ class Bubble(private val ctx: Context, private val onTap: () -> Unit, private va
         hidden = true
         setTouchable(false)
         icon.animate().alpha(0f).scaleX(HIDDEN_SCALE).scaleY(HIDDEN_SCALE)
-            .setDuration(BUBBLE_OUT).setInterpolator(EMPHASIZED)
+            .setDuration(BUBBLE_OUT).setInterpolator(Easing.EMPHASIZED)
             .withEndAction {
                 bubble.visibility = View.INVISIBLE
                 onHidden()
@@ -100,7 +100,7 @@ class Bubble(private val ctx: Context, private val onTap: () -> Unit, private va
         setTouchable(true)
         (icon.drawable as AnimatedVectorDrawable).run { reset(); start() }
         icon.animate().alpha(1f).scaleX(1f).scaleY(1f)
-            .setDuration(BUBBLE_IN).setInterpolator(EMPHASIZED).start()
+            .setDuration(BUBBLE_IN).setInterpolator(Easing.EMPHASIZED).start()
     }
 
     /** Removes both windows immediately. Cancelled animations do not run their end actions. Idempotent. */
@@ -135,7 +135,7 @@ class Bubble(private val ctx: Context, private val onTap: () -> Unit, private va
                 moved = false
                 magnet = false
                 icon.animate().scaleX(HELD_SCALE).scaleY(HELD_SCALE)
-                    .setDuration(HELD).setInterpolator(EMPHASIZED).start()
+                    .setDuration(HELD).setInterpolator(Easing.EMPHASIZED).start()
             }
             MotionEvent.ACTION_MOVE -> {
                 val dx = e.rawX - downX
@@ -151,7 +151,7 @@ class Bubble(private val ctx: Context, private val onTap: () -> Unit, private va
                     if (!magnet) {
                         magnet = true
                         setHot(true)
-                        moveTo(startX + (tx - startCx).toInt(), startY + (ty - startCy).toInt(), MAGNET, EMPHASIZED)
+                        moveTo(startX + (tx - startCx).toInt(), startY + (ty - startCy).toInt(), MAGNET, Easing.EMPHASIZED)
                     }
                 } else {
                     if (magnet) {
@@ -163,7 +163,7 @@ class Bubble(private val ctx: Context, private val onTap: () -> Unit, private va
                 }
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                icon.animate().scaleX(1f).scaleY(1f).setDuration(HELD).setInterpolator(EMPHASIZED).start()
+                icon.animate().scaleX(1f).scaleY(1f).setDuration(HELD).setInterpolator(Easing.EMPHASIZED).start()
                 when {
                     !moved -> if (e.actionMasked == MotionEvent.ACTION_UP) icon.performClick()
                     magnet -> dismiss()
@@ -193,20 +193,20 @@ class Bubble(private val ctx: Context, private val onTap: () -> Unit, private va
         target.scaleX = DZ_START_SCALE
         target.scaleY = DZ_START_SCALE
         glow.alpha = 0f
-        zone.animate().alpha(1f).setDuration(DZ_IN).setInterpolator(EASE_OUT).start()
+        zone.animate().alpha(1f).setDuration(DZ_IN).setInterpolator(Easing.EASE_OUT).start()
         target.animate().translationY(0f).scaleX(1f).scaleY(1f)
-            .setDuration(DZ_IN).setInterpolator(EMPHASIZED).start()
+            .setDuration(DZ_IN).setInterpolator(Easing.EMPHASIZED).start()
     }
 
     private fun hideZone() {
-        zone.animate().alpha(0f).setDuration(DZ_IN).setInterpolator(EASE_OUT)
+        zone.animate().alpha(0f).setDuration(DZ_IN).setInterpolator(Easing.EASE_OUT)
             .withEndAction { zone.visibility = View.INVISIBLE }.start()
     }
 
     private fun setHot(on: Boolean) {
         val s = if (on) HOT_SCALE else 1f
-        target.animate().scaleX(s).scaleY(s).setDuration(MAGNET).setInterpolator(EMPHASIZED).start()
-        glow.animate().alpha(if (on) 1f else 0f).setDuration(MAGNET).setInterpolator(EMPHASIZED).start()
+        target.animate().scaleX(s).scaleY(s).setDuration(MAGNET).setInterpolator(Easing.EMPHASIZED).start()
+        glow.animate().alpha(if (on) 1f else 0f).setDuration(MAGNET).setInterpolator(Easing.EMPHASIZED).start()
     }
 
     /** Release on target: bubble alpha 0 / scale .3, target alpha 0 / scale .4 (dismiss 280), then [onDismiss]. */
@@ -214,10 +214,10 @@ class Bubble(private val ctx: Context, private val onTap: () -> Unit, private va
         hidden = true
         setTouchable(false)
         icon.animate().alpha(0f).scaleX(GONE_SCALE).scaleY(GONE_SCALE)
-            .setDuration(DISMISS).setInterpolator(EMPHASIZED).start()
+            .setDuration(DISMISS).setInterpolator(Easing.EMPHASIZED).start()
         glow.animate().alpha(0f).setDuration(DISMISS).start()
         target.animate().alpha(0f).scaleX(TARGET_GONE_SCALE).scaleY(TARGET_GONE_SCALE)
-            .setDuration(DISMISS).setInterpolator(EMPHASIZED)
+            .setDuration(DISMISS).setInterpolator(Easing.EMPHASIZED)
             .withEndAction { onDismiss() }.start()
     }
 
@@ -279,8 +279,6 @@ class Bubble(private val ctx: Context, private val onTap: () -> Unit, private va
         const val DZ_START_SCALE = .9f
         const val HOT_SCALE = 1.2f
         // a2-halo.html easing curves
-        val EMPHASIZED = PathInterpolator(.2f, 0f, 0f, 1f)      // cubic-bezier(.2,0,0,1)
         val OVERSHOOT = PathInterpolator(.34f, 1.56f, .64f, 1f) // cubic-bezier(.34,1.56,.64,1)
-        val EASE_OUT = PathInterpolator(0f, 0f, .58f, 1f)       // CSS ease-out
     }
 }

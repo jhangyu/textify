@@ -2,7 +2,6 @@ package us.jhangy.textify
 
 import android.graphics.Color
 import android.view.View
-import android.view.animation.PathInterpolator
 import android.widget.ImageView
 import android.widget.TextView
 import us.jhangy.textify.databinding.ActivitySessionBinding
@@ -56,8 +55,8 @@ internal class TranslationPanel(private val b: ActivitySessionBinding, private v
         isOpen = true
         b.panelScrim.visibility = View.VISIBLE
         b.panel.visibility = View.VISIBLE
-        b.panelScrim.animate().alpha(1f).setDuration(PANEL_IN).setInterpolator(EASE_OUT)
-        b.panel.animate().translationY(0f).alpha(1f).setDuration(PANEL_IN).setInterpolator(DECELERATE)
+        b.panelScrim.animate().alpha(1f).setDuration(PANEL_IN).setInterpolator(Easing.EASE_OUT)
+        b.panel.animate().translationY(0f).alpha(1f).setDuration(PANEL_IN).setInterpolator(Easing.DECELERATE)
     }
 
     /** panelOut 240 (accelerate / ease-in), then GONE. */
@@ -66,9 +65,9 @@ internal class TranslationPanel(private val b: ActivitySessionBinding, private v
         isOpen = false
         source?.focused = false
         source = null
-        b.panelScrim.animate().alpha(0f).setDuration(PANEL_OUT).setInterpolator(EASE_IN)
+        b.panelScrim.animate().alpha(0f).setDuration(PANEL_OUT).setInterpolator(Easing.EASE_IN)
             .withEndAction { b.panelScrim.visibility = View.GONE }
-        b.panel.animate().translationY(PANEL_DY * d).alpha(0f).setDuration(PANEL_OUT).setInterpolator(ACCELERATE)
+        b.panel.animate().translationY(PANEL_DY * d).alpha(0f).setDuration(PANEL_OUT).setInterpolator(Easing.ACCELERATE)
             .withEndAction { b.panel.visibility = View.GONE }
     }
 
@@ -100,9 +99,5 @@ internal class TranslationPanel(private val b: ActivitySessionBinding, private v
         private const val COPY_OK_HOLD = 1400L
         private const val PANEL_DY = 40f
         private val PLUM = 0xFF4C1D95.toInt()
-        private val DECELERATE = PathInterpolator(0f, 0f, 0.2f, 1f)
-        private val ACCELERATE = PathInterpolator(0.4f, 0f, 1f, 1f)
-        private val EASE_OUT = PathInterpolator(0f, 0f, 0.58f, 1f)
-        private val EASE_IN = PathInterpolator(0.42f, 0f, 1f, 1f)
     }
 }

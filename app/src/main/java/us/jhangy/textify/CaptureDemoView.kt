@@ -16,7 +16,6 @@ import android.util.AttributeSet
 import android.view.View
 import android.view.ViewGroup
 import android.view.animation.LinearInterpolator
-import android.view.animation.PathInterpolator
 import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.core.animation.doOnEnd
@@ -176,7 +175,7 @@ class CaptureDemoView @JvmOverloads constructor(
         flashAnim?.cancel()
         flashAnim = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = FLASH
-            interpolator = EASE_OUT
+            interpolator = Easing.EASE_OUT
             addUpdateListener { flashT = it.animatedValue as Float; invalidate() }
             doOnEnd { flashT = -1f; invalidate() }
             start()
@@ -195,7 +194,7 @@ class CaptureDemoView @JvmOverloads constructor(
         pulseAnim = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = PULSE
             repeatCount = 1                       // CSS animation-iteration-count 2
-            interpolator = EASE_OUT
+            interpolator = Easing.EASE_OUT
             addUpdateListener { pulse = it.animatedValue as Float; invalidate() }
             doOnEnd { pulse = -1f; invalidate() }
             start()
@@ -440,7 +439,6 @@ class CaptureDemoView @JvmOverloads constructor(
         const val PILL_GLOW_DP = 8f
         const val SCREEN_SPREAD_DP = -12f
 
-        val EASE_OUT = PathInterpolator(0f, 0f, 0.58f, 1f)   // CSS ease-out
 
         private fun seg(t: Float, from: Float, to: Float) = ((t - from) / (to - from)).coerceIn(0f, 1f)
 

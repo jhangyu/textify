@@ -13,7 +13,6 @@ import android.util.AttributeSet
 import android.view.HapticFeedbackConstants
 import android.view.View
 import android.view.accessibility.AccessibilityNodeInfo
-import android.view.animation.PathInterpolator
 import android.widget.CheckBox
 import android.widget.FrameLayout
 import android.widget.TextView
@@ -69,7 +68,7 @@ class LanguageToggleView @JvmOverloads constructor(
         } else {
             fillAnim = ValueAnimator.ofFloat(onLevel, target).apply {
                 duration = TOGGLE_FILL
-                interpolator = EASE_OUT
+                interpolator = Easing.EASE_OUT
                 addUpdateListener { onLevel = it.animatedValue as Float; applyColors() }
                 start()
             }
@@ -81,9 +80,9 @@ class LanguageToggleView @JvmOverloads constructor(
         rubberAnim?.cancel()
         val kf = arrayOf(
             Keyframe.ofFloat(0f, 1f),
-            Keyframe.ofFloat(0.30f, 0.92f).apply { interpolator = EASE_OUT },
-            Keyframe.ofFloat(0.65f, 1.04f).apply { interpolator = EASE_OUT },
-            Keyframe.ofFloat(1f, 1f).apply { interpolator = EASE_OUT },
+            Keyframe.ofFloat(0.30f, 0.92f).apply { interpolator = Easing.EASE_OUT },
+            Keyframe.ofFloat(0.65f, 1.04f).apply { interpolator = Easing.EASE_OUT },
+            Keyframe.ofFloat(1f, 1f).apply { interpolator = Easing.EASE_OUT },
         )
         rubberAnim = ObjectAnimator.ofPropertyValuesHolder(
             this,
@@ -95,8 +94,8 @@ class LanguageToggleView @JvmOverloads constructor(
             PropertyValuesHolder.ofKeyframe(
                 "f",
                 Keyframe.ofFloat(0f, 0f),
-                Keyframe.ofFloat(0.35f, 1f).apply { interpolator = EASE_OUT },
-                Keyframe.ofFloat(1f, 0f).apply { interpolator = EASE_OUT },
+                Keyframe.ofFloat(0.35f, 1f).apply { interpolator = Easing.EASE_OUT },
+                Keyframe.ofFloat(1f, 0f).apply { interpolator = Easing.EASE_OUT },
             ),
         ).apply {
             duration = REJECT_FLASH
@@ -165,6 +164,5 @@ class LanguageToggleView @JvmOverloads constructor(
         const val TOGGLE_FILL = 240L
         const val SHAKE = 360L
         const val REJECT_FLASH = 380L
-        val EASE_OUT = PathInterpolator(0f, 0f, 0.58f, 1f)
     }
 }

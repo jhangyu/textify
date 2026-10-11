@@ -21,7 +21,6 @@ import android.provider.Settings
 import android.util.AttributeSet
 import android.view.View
 import android.view.ViewGroup
-import android.view.animation.PathInterpolator
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.SystemBarStyle
@@ -208,7 +207,7 @@ class MainActivity : AppCompatActivity() {
             block.alpha = 0f
             block.translationY = dy
             block.animate().alpha(1f).translationY(0f)
-                .setStartDelay(INTRO_STAGGER * (i + 1)).setDuration(INTRO_IN).setInterpolator(EMPHASIZED)
+                .setStartDelay(INTRO_STAGGER * (i + 1)).setDuration(INTRO_IN).setInterpolator(Easing.EMPHASIZED)
         }
     }
 
@@ -271,9 +270,9 @@ class MainActivity : AppCompatActivity() {
     /** copyOut 120 ease-in -> set text -> copyIn 220. */
     private fun swap(view: TextView, res: Int, animate: Boolean) {
         if (!animate) { view.setText(res); return }
-        view.animate().alpha(0f).setStartDelay(0L).setDuration(COPY_OUT).setInterpolator(EASE_IN).withEndAction {
+        view.animate().alpha(0f).setStartDelay(0L).setDuration(COPY_OUT).setInterpolator(Easing.EASE_IN).withEndAction {
             view.setText(res)
-            view.animate().alpha(1f).setDuration(COPY_IN).setInterpolator(EASE_OUT)
+            view.animate().alpha(1f).setDuration(COPY_IN).setInterpolator(Easing.EASE_OUT)
         }
     }
 
@@ -311,9 +310,6 @@ class MainActivity : AppCompatActivity() {
         private const val GRANTED_HOLD = 900L
         private const val DOT_LOOP = 1200L
         private const val DOT_DELAY = 150L
-        private val EMPHASIZED = PathInterpolator(0.2f, 0f, 0f, 1f)   // [P2] cubic-bezier(.2,0,0,1)
-        private val EASE_IN = PathInterpolator(0.42f, 0f, 1f, 1f)     // CSS ease-in (copyOut)
-        private val EASE_OUT = PathInterpolator(0f, 0f, 0.58f, 1f)    // CSS ease-out (copyIn; [P2] gives no curve)
     }
 }
 

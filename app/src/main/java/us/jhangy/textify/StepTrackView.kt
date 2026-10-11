@@ -11,7 +11,6 @@ import android.graphics.drawable.Drawable
 import android.util.AttributeSet
 import android.util.TypedValue
 import android.view.View
-import android.view.animation.PathInterpolator
 import androidx.core.content.ContextCompat
 import kotlin.math.roundToInt
 
@@ -80,13 +79,13 @@ class StepTrackView @JvmOverloads constructor(
         mixT = 0f
         mixAnim = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = NODE_CHECK
-            interpolator = CSS_EASE
+            interpolator = Easing.CSS_EASE
             addUpdateListener { mixT = it.animatedValue as Float; invalidate() }
             start()
         }
         fillAnim = ValueAnimator.ofFloat(fill, target).apply {
             duration = TRACK_FILL
-            interpolator = EMPHASIZED
+            interpolator = Easing.EMPHASIZED
             addUpdateListener { fill = it.animatedValue as Float; invalidate() }
             start()
         }
@@ -176,7 +175,5 @@ class StepTrackView @JvmOverloads constructor(
         const val CHECK_DP = 14f
         const val TRACK_FILL = 400L
         const val NODE_CHECK = 260L
-        val EMPHASIZED = PathInterpolator(0.2f, 0f, 0f, 1f)
-        val CSS_EASE = PathInterpolator(0.25f, 0.1f, 0.25f, 1f)   // CSS transition default
     }
 }

@@ -12,7 +12,6 @@ import android.graphics.drawable.Drawable
 import android.util.AttributeSet
 import android.view.View
 import android.view.ViewGroup
-import android.view.animation.PathInterpolator
 import android.widget.FrameLayout
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
@@ -144,7 +143,7 @@ class LanguagePreviewView @JvmOverloads constructor(
         r.anim = ValueAnimator.ofFloat(0f, 1f).apply {
             startDelay = delay
             duration = if (on) PILL_IN else PILL_OUT
-            interpolator = if (on) EASE_OUT else EASE_IN
+            interpolator = if (on) Easing.EASE_OUT else Easing.EASE_IN
             addUpdateListener {
                 val f = it.animatedValue as Float
                 r.bg.pillAlpha = a0 + (toA - a0) * f
@@ -153,8 +152,8 @@ class LanguagePreviewView @JvmOverloads constructor(
             }
             start()
         }
-        r.tag?.animate()?.alpha(toA)?.setStartDelay(delay)?.setDuration(TEXT_FADE)?.setInterpolator(CSS_EASE)
-        r.text?.animate()?.alpha(toText)?.setStartDelay(delay)?.setDuration(TEXT_FADE)?.setInterpolator(CSS_EASE)
+        r.tag?.animate()?.alpha(toA)?.setStartDelay(delay)?.setDuration(TEXT_FADE)?.setInterpolator(Easing.CSS_EASE)
+        r.text?.animate()?.alpha(toText)?.setStartDelay(delay)?.setDuration(TEXT_FADE)?.setInterpolator(Easing.CSS_EASE)
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -213,8 +212,5 @@ class LanguagePreviewView @JvmOverloads constructor(
         const val PILL_OUT = 200L
         const val TEXT_FADE = 200L
         const val BOX_STAGGER = 140f
-        val EASE_OUT = PathInterpolator(0f, 0f, 0.58f, 1f)
-        val EASE_IN = PathInterpolator(0.42f, 0f, 1f, 1f)
-        val CSS_EASE = PathInterpolator(0.25f, 0.1f, 0.25f, 1f)
     }
 }

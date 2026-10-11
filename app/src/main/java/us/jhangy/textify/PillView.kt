@@ -19,7 +19,6 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.animation.LinearInterpolator
-import android.view.animation.PathInterpolator
 import androidx.appcompat.widget.AppCompatTextView
 import androidx.core.animation.doOnEnd
 import androidx.core.widget.TextViewCompat
@@ -85,6 +84,7 @@ class PillView(context: Context, val block: OcrBlock) : AppCompatTextView(contex
 
     private val dp = resources.displayMetrics.density
     private var painter: PillPainter? = null
+    private var painterCorner = -1f
     private val card = CardPainter(resources)
     private var corner = 0f
     private var originalTextPx = 0f
@@ -221,18 +221,18 @@ class PillView(context: Context, val block: OcrBlock) : AppCompatTextView(contex
     /** a2 boxIn: opacity 0 -> 1 and scale .9 -> 1 over 260 ms, cubic-bezier(.2,0,0,1), after [delayMs]. */
     fun playIn(delayMs: Long) {
         animate().alpha(1f).scaleX(1f).scaleY(1f)
-            .setStartDelay(delayMs).setDuration(BOX_IN).setInterpolator(EMPHASIZED)
+            .setStartDelay(delayMs).setDuration(BOX_IN).setInterpolator(Easing.EMPHASIZED)
     }
 
     /** a2 copy feedback: overlay flash 1 -> 0 (ease-out) and a white shine sweep, both over flash 380 ms. */
     fun playCopied() {
-        animateOverlay(1f, 0L, EMPHASIZED)
-        animateOverlay(0f, FLASH, EASE_OUT)
+        animateOverlay(1f, 0L, Easing.EMPHASIZED)
+        animateOverlay(0f, FLASH, Easing.EASE_OUT)
         val band = width * SHINE_BAND
         shineAnim?.cancel()
         shineAnim = ValueAnimator.ofFloat(-1.1f * band, width.toFloat()).apply {
             duration = FLASH
-            interpolator = SHINE_CURVE
+            interpolator = Easing.FAST_OUT_SLOW_IN
             addUpdateListener { shineX = it.animatedValue as Float; invalidate() }
             doOnEnd { shineX = Float.NaN; invalidate() }
             start()
@@ -256,7 +256,7 @@ class PillView(context: Context, val block: OcrBlock) : AppCompatTextView(contex
         revealAnim = ValueAnimator.ofFloat(reveal, to).apply {
             startDelay = delayMs
             duration = FLIP
-            interpolator = EMPHASIZED
+            interpolator = Easing.EMPHASIZED
             addUpdateListener { reveal = it.animatedValue as Float; invalidate() }
             if (onEnd != null) doOnEnd { onEnd() }
             start()
@@ -269,7 +269,7 @@ class PillView(context: Context, val block: OcrBlock) : AppCompatTextView(contex
         prismAnim = ValueAnimator.ofFloat(-1.1f * BAND, 1.6f).apply {
             startDelay = delayMs
             duration = ARRIVE
-            interpolator = SHINE_CURVE
+            interpolator = Easing.FAST_OUT_SLOW_IN
             addUpdateListener { prismX = (it.animatedValue as Float) * width; invalidate() }
             doOnEnd { prismX = Float.NaN; invalidate() }
             start()
@@ -302,7 +302,7 @@ class PillView(context: Context, val block: OcrBlock) : AppCompatTextView(contex
             duration = FOCUS
             repeatMode = ValueAnimator.REVERSE
             repeatCount = ValueAnimator.INFINITE
-            interpolator = EASE_IN_OUT
+            interpolator = Easing.EASE_IN_OUT
             addUpdateListener { glowAlpha = it.animatedValue as Float; invalidate() }
             start()
         }
@@ -317,8 +317,8 @@ class PillView(context: Context, val block: OcrBlock) : AppCompatTextView(contex
 
     private fun press(on: Boolean) {
         val s = if (on) 1.03f else 1f
-        animate().scaleX(s).scaleY(s).setStartDelay(0L).setDuration(BOX_IN).setInterpolator(EMPHASIZED)
-        animateOverlay(if (on) 0.65f else 0f, PRESS_FADE, CSS_EASE)
+        animate().scaleX(s).scaleY(s).setStartDelay(0L).setDuration(BOX_IN).setInterpolator(Easing.EMPHASIZED)
+        animateOverlay(if (on) 0.65f else 0f, PRESS_FADE, Easing.CSS_EASE)
     }
 
     private fun animateOverlay(to: Float, ms: Long, curve: TimeInterpolator) {
@@ -364,8 +364,12 @@ class PillView(context: Context, val block: OcrBlock) : AppCompatTextView(contex
         val fh = h.toFloat()
         corner = min(CORNER_DP * dp, fh / 2f)                // prism-tide: radius = min(12dp, h/2)
         // a2 box: LinearGradient #A78BFA 20% -> #F472B6 16%, glow #A78BFA 28% r12
-        painter = PillPainter(withAlpha(0.20f, 0xA78BFA), withAlpha(0.16f, 0xF472B6), withAlpha(0.28f, 0xA78BFA), GLOW_R_DP * dp, corner)
-            .also { it.setSize(w, h) }
+        // PillPainter bakes the corner in, so it is rebuilt only when the corner changes (h/2 < 12dp), not on every size change
+        if (painter == null || painterCorner != corner) {
+            painter = PillPainter(withAlpha(0.20f, 0xA78BFA), withAlpha(0.16f, 0xF472B6), withAlpha(0.28f, 0xA78BFA), GLOW_R_DP * dp, corner)
+            painterCorner = corner
+        }
+        painter?.setSize(w, h)
         card.setSize(w, h, corner)
         pillPath.reset()
         pillPath.addRoundRect(0f, 0f, fw, fh, corner, corner, Path.Direction.CW)
@@ -470,10 +474,5 @@ class PillView(context: Context, val block: OcrBlock) : AppCompatTextView(contex
         private const val PRESS_FADE = 140L
         private const val SHINE_BAND = 0.48f
         private const val SELECTING = 0.45f
-        private val EMPHASIZED = PathInterpolator(0.2f, 0f, 0f, 1f)      // a2 boxIn, prism-tide flip
-        private val CSS_EASE = PathInterpolator(0.25f, 0.1f, 0.25f, 1f)  // CSS "ease" (pressing overlay)
-        private val EASE_OUT = PathInterpolator(0f, 0f, 0.58f, 1f)       // CSS "ease-out" (copied flash)
-        private val EASE_IN_OUT = PathInterpolator(0.42f, 0f, 0.58f, 1f) // CSS "ease-in-out" (focus glow)
-        private val SHINE_CURVE = PathInterpolator(0.4f, 0f, 0.2f, 1f)   // a2 shine, prism-tide arrive
     }
 }
