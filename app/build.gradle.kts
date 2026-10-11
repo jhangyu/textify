@@ -15,9 +15,23 @@ android {
         versionName = "0.1"
     }
 
+    // Release signing is configured only when the keystore properties exist (~/.gradle/gradle.properties).
+    val storeFile = providers.gradleProperty("TEXTIFY_STORE_FILE").orNull
+    if (storeFile != null) {
+        signingConfigs {
+            create("release") {
+                this.storeFile = file(storeFile)
+                storePassword = providers.gradleProperty("TEXTIFY_STORE_PASSWORD").get()
+                keyAlias = providers.gradleProperty("TEXTIFY_KEY_ALIAS").get()
+                keyPassword = providers.gradleProperty("TEXTIFY_KEY_PASSWORD").get()
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (storeFile != null) signingConfig = signingConfigs.getByName("release")
         }
     }
 
