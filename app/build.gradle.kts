@@ -39,9 +39,11 @@ dependencies {
     implementation("androidx.activity:activity-ktx:1.9.3")
     implementation("androidx.lifecycle:lifecycle-service:2.8.7")
 
-    // On-device OCR. One recognizer is active at a time (see Prefs.script);
-    // the Chinese model also covers Latin/English.
+    // On-device OCR. Every selected script's recognizer runs on the same screenshot in parallel and the
+    // results are merged (OcrMerge.kt); the Chinese model also covers Latin/English.
     implementation("com.google.mlkit:text-recognition-chinese:16.0.1")
     implementation("com.google.mlkit:text-recognition-japanese:16.0.1")
     implementation("com.google.mlkit:text-recognition-korean:16.0.1")
+
+    testImplementation("junit:junit:4.13.2")
 }
