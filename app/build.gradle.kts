@@ -59,5 +59,9 @@ dependencies {
     implementation("com.google.mlkit:text-recognition-japanese:16.0.1")
     implementation("com.google.mlkit:text-recognition-korean:16.0.1")
 
+    // Traditional Chinese output (translation spec decision 7): OpenCC s2twp via the pure-Java opencc4j port.
+    // 1.14.0 = Maven Central latest (2025-09-05); pulls heaven 0.13.0 + nlp-common 0.0.5 (~2.9 MB), jieba stays optional.
+    implementation("com.github.houbb:opencc4j:1.14.0")
+
     testImplementation("junit:junit:4.13.2")
 }
