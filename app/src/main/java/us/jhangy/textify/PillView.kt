@@ -4,16 +4,11 @@ import android.animation.TimeInterpolator
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BlurMaskFilter
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
-import android.graphics.PorterDuff
-import android.graphics.PorterDuffXfermode
-import android.graphics.RectF
 import android.graphics.Shader
 import android.os.Bundle
 import android.util.TypedValue
@@ -26,8 +21,6 @@ import androidx.appcompat.widget.AppCompatTextView
 import androidx.core.animation.doOnEnd
 import kotlin.math.max
 import kotlin.math.roundToInt
-
-private fun argb(alpha: Float, rgb: Int): Int = ((alpha * 255f).roundToInt() shl 24) or (rgb and 0xFFFFFF)
 
 /**
  * One OCR line as an a2 "Halo" pill. The text is real, selectable and transparent, sized to
@@ -52,15 +45,11 @@ class PillView(context: Context, val line: OcrLine) : AppCompatTextView(context)
         }
 
     private val dp = resources.displayMetrics.density
-    private val glowRadius = GLOW_R_DP * dp
-    private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val fillSelecting = Paint(Paint.ANTI_ALIAS_FLAG)
+    // a2 box: LinearGradient #A78BFA 20% -> #F472B6 16%, glow #A78BFA 28% r12, radius = h/2
+    private val painter = PillPainter(withAlpha(0.20f, 0xA78BFA), withAlpha(0.16f, 0xF472B6), withAlpha(0.28f, 0xA78BFA), GLOW_R_DP * dp, -1f)
     private val overlay = Paint(Paint.ANTI_ALIAS_FLAG)
     private val shine = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val glowPaint = Paint(Paint.FILTER_BITMAP_FLAG)
     private val pillPath = Path()
-    private val glowDst = RectF()
-    private var glow: Bitmap? = null
     private var overlayAlpha = 0f
     private var shineX = Float.NaN
     private var overlayAnim: ValueAnimator? = null
@@ -84,7 +73,7 @@ class PillView(context: Context, val line: OcrLine) : AppCompatTextView(context)
     init {
         text = line.text
         setTextColor(Color.TRANSPARENT)
-        highlightColor = argb(0.26f, 0x7C3AED)
+        highlightColor = withAlpha(0.26f, 0x7C3AED)
         setTextIsSelectable(true)
         setSingleLine(true)
         maxLines = 1
@@ -165,43 +154,18 @@ class PillView(context: Context, val line: OcrLine) : AppCompatTextView(context)
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         if (w == 0 || h == 0) return
+        painter.setSize(w, h)
         val fw = w.toFloat()
         val fh = h.toFloat()
         val r = fh / 2f
         pillPath.reset()
         pillPath.addRoundRect(0f, 0f, fw, fh, r, r, Path.Direction.CW)
-        fill.shader = LinearGradient(0f, 0f, fw, 0f, argb(0.20f, 0xA78BFA), argb(0.16f, 0xF472B6), Shader.TileMode.CLAMP)
-        fillSelecting.shader = LinearGradient(0f, 0f, fw, 0f, argb(0.20f * SELECTING, 0xA78BFA), argb(0.16f * SELECTING, 0xF472B6), Shader.TileMode.CLAMP)
-        overlay.shader = LinearGradient(0f, 0f, fw, 0f, argb(0.28f, 0x7C3AED), argb(0.26f, 0xEC4899), Shader.TileMode.CLAMP)
+        overlay.shader = LinearGradient(0f, 0f, fw, 0f, withAlpha(0.28f, 0x7C3AED), withAlpha(0.26f, 0xEC4899), Shader.TileMode.CLAMP)
         val band = fw * SHINE_BAND
         shine.shader = LinearGradient(
             0f, 0f, band, 0f,
-            intArrayOf(argb(0f, 0xFFFFFF), argb(0.9f, 0xFFFFFF), argb(0f, 0xFFFFFF)), null, Shader.TileMode.CLAMP,
+            intArrayOf(withAlpha(0f, 0xFFFFFF), withAlpha(0.9f, 0xFFFFFF), withAlpha(0f, 0xFFFFFF)), null, Shader.TileMode.CLAMP,
         )
-        glow = renderGlow(fw, fh)   // old bitmap left to GC: the last recorded frame may still reference it
-        glowDst.set(-glowRadius, -glowRadius, fw + glowRadius, fh + glowRadius)
-    }
-
-    /** Outer glow like CSS box-shadow 0 0 12px: blurred pill on a software canvas, pill area cleared. */
-    private fun renderGlow(w: Float, h: Float): Bitmap {
-        val s = GLOW_SCALE
-        val pad = glowRadius * s
-        val bmp = Bitmap.createBitmap(
-            max(1, (w * s + 2f * pad).roundToInt()),
-            max(1, (h * s + 2f * pad).roundToInt()),
-            Bitmap.Config.ARGB_8888,
-        )
-        val c = Canvas(bmp)
-        val r = h * s / 2f
-        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = argb(0.28f, 0xA78BFA)
-            maskFilter = BlurMaskFilter(glowRadius * s, BlurMaskFilter.Blur.NORMAL)
-        }
-        c.drawRoundRect(pad, pad, pad + w * s, pad + h * s, r, r, p)
-        p.maskFilter = null
-        p.xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR)
-        c.drawRoundRect(pad, pad, pad + w * s, pad + h * s, r, r, p)
-        return bmp
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -210,8 +174,7 @@ class PillView(context: Context, val line: OcrLine) : AppCompatTextView(context)
         val r = h / 2f
         val saved = canvas.save()
         canvas.translate(scrollX.toFloat(), scrollY.toFloat())   // keep the pill fixed while the text scrolls
-        if (!selecting) glow?.let { canvas.drawBitmap(it, null, glowDst, glowPaint) }
-        canvas.drawRoundRect(0f, 0f, w, h, r, r, if (selecting) fillSelecting else fill)
+        painter.draw(canvas, alpha = if (selecting) SELECTING else 1f, withGlow = !selecting)   // a2 .box.selecting: fill x.45, no glow
         if (overlayAlpha > 0f) {
             val layer = canvas.saveLayerAlpha(0f, 0f, w, h, (overlayAlpha.coerceIn(0f, 1f) * 255f).roundToInt())
             canvas.drawRoundRect(0f, 0f, w, h, r, r, overlay)
@@ -238,8 +201,6 @@ class PillView(context: Context, val line: OcrLine) : AppCompatTextView(context)
         const val PAD_X_DP = 7f
         const val PAD_Y_DP = 3f
         private const val GLOW_R_DP = 12f
-        // ponytail: glow bitmap at half resolution; it is a soft blur so the loss is invisible
-        private const val GLOW_SCALE = 0.5f
         private const val BOX_IN = 260L
         private const val FLASH = 380L
         private const val PRESS_FADE = 140L
