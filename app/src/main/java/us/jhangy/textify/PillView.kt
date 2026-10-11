@@ -19,14 +19,15 @@ import android.view.accessibility.AccessibilityNodeInfo
 import android.view.animation.PathInterpolator
 import androidx.appcompat.widget.AppCompatTextView
 import androidx.core.animation.doOnEnd
-import kotlin.math.max
+import androidx.core.widget.TextViewCompat
+import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
- * One OCR paragraph as an a2 "Halo" pill (single line until Task 2 of the translation plan). The text is real, selectable and transparent, sized to
- * roughly cover the glyphs in the screenshot, so long-press gives system handles + copy menu.
- * Tap is detected with GestureDetector: a selectable TextView is focusable in touch mode, so the
- * first tap would only take focus and never reach an OnClickListener.
+ * One OCR paragraph as an a2 "Halo" box. The paragraph's text is real, selectable and transparent, laid out
+ * line by line on the screenshot's OCR line boxes (translation spec §1), so long-press gives system handles
+ * + copy menu on the glyphs. Tap is detected with GestureDetector: a selectable TextView is focusable in touch
+ * mode, so the first tap would only take focus and never reach an OnClickListener.
  */
 @SuppressLint("ViewConstructor")
 class PillView(context: Context, val block: OcrBlock) : AppCompatTextView(context) {
@@ -45,8 +46,8 @@ class PillView(context: Context, val block: OcrBlock) : AppCompatTextView(contex
         }
 
     private val dp = resources.displayMetrics.density
-    // a2 box: LinearGradient #A78BFA 20% -> #F472B6 16%, glow #A78BFA 28% r12, radius = h/2
-    private val painter = PillPainter(withAlpha(0.20f, 0xA78BFA), withAlpha(0.16f, 0xF472B6), withAlpha(0.28f, 0xA78BFA), GLOW_R_DP * dp, -1f)
+    private var painter: PillPainter? = null
+    private var corner = 0f
     private val overlay = Paint(Paint.ANTI_ALIAS_FLAG)
     private val shine = Paint(Paint.ANTI_ALIAS_FLAG)
     private val pillPath = Path()
@@ -75,17 +76,30 @@ class PillView(context: Context, val block: OcrBlock) : AppCompatTextView(contex
         setTextColor(Color.TRANSPARENT)
         highlightColor = withAlpha(0.26f, 0x7C3AED)
         setTextIsSelectable(true)
-        setSingleLine(true)
-        maxLines = 1
         includeFontPadding = false
-        gravity = Gravity.START or Gravity.CENTER_VERTICAL
+        gravity = Gravity.START or Gravity.TOP
         val px = (PAD_X_DP * dp).roundToInt()
         val py = (PAD_Y_DP * dp).roundToInt()
         setPadding(px, py, px, py)
-        setAutoSizeTextTypeUniformWithConfiguration(4, max(5, block.lines.maxOf { it.height() }), 1, TypedValue.COMPLEX_UNIT_PX)
+        applyOriginalLayout()
         alpha = 0f
         scaleX = 0.9f
         scaleY = 0.9f
+    }
+
+    /** Spec §1: keep the OCR line breaks; size and pitch from the OCR line boxes; squeeze glyphs to their widths. */
+    private fun applyOriginalLayout() {
+        val boxes = block.lines.map { it.toBox() }
+        val m = lineMetrics(boxes)
+        setHorizontallyScrolling(true)                    // never re-wrap: one TextView line per OCR line
+        maxLines = Int.MAX_VALUE
+        setLineSpacing(0f, 1f)
+        setTextSize(TypedValue.COMPLEX_UNIT_PX, m.textPx)
+        TextViewCompat.setLineHeight(this, m.pitchPx.roundToInt())
+        textScaleX = 1f
+        val measured = block.text.split('\n').sumOf { paint.measureText(it).toDouble() }
+        val target = boxes.sumOf { it.width }.toDouble()
+        textScaleX = if (measured > 0.0) (target / measured).toFloat().coerceIn(0.5f, 2f) else 1f
     }
 
     /** a2 boxIn: opacity 0 -> 1 and scale .9 -> 1 over 260 ms, cubic-bezier(.2,0,0,1), after [delayMs]. */
@@ -154,12 +168,14 @@ class PillView(context: Context, val block: OcrBlock) : AppCompatTextView(contex
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         if (w == 0 || h == 0) return
-        painter.setSize(w, h)
         val fw = w.toFloat()
         val fh = h.toFloat()
-        val r = fh / 2f
+        corner = min(CORNER_DP * dp, fh / 2f)                // prism-tide: radius = min(12dp, h/2)
+        // a2 box: LinearGradient #A78BFA 20% -> #F472B6 16%, glow #A78BFA 28% r12
+        painter = PillPainter(withAlpha(0.20f, 0xA78BFA), withAlpha(0.16f, 0xF472B6), withAlpha(0.28f, 0xA78BFA), GLOW_R_DP * dp, corner)
+            .also { it.setSize(w, h) }
         pillPath.reset()
-        pillPath.addRoundRect(0f, 0f, fw, fh, r, r, Path.Direction.CW)
+        pillPath.addRoundRect(0f, 0f, fw, fh, corner, corner, Path.Direction.CW)
         overlay.shader = LinearGradient(0f, 0f, fw, 0f, withAlpha(0.28f, 0x7C3AED), withAlpha(0.26f, 0xEC4899), Shader.TileMode.CLAMP)
         val band = fw * SHINE_BAND
         shine.shader = LinearGradient(
@@ -171,13 +187,12 @@ class PillView(context: Context, val block: OcrBlock) : AppCompatTextView(contex
     override fun onDraw(canvas: Canvas) {
         val w = width.toFloat()
         val h = height.toFloat()
-        val r = h / 2f
         val saved = canvas.save()
         canvas.translate(scrollX.toFloat(), scrollY.toFloat())   // keep the pill fixed while the text scrolls
-        painter.draw(canvas, alpha = if (selecting) SELECTING else 1f, withGlow = !selecting)   // a2 .box.selecting: fill x.45, no glow
+        painter?.draw(canvas, alpha = if (selecting) SELECTING else 1f, withGlow = !selecting)   // a2 .box.selecting: fill x.45, no glow
         if (overlayAlpha > 0f) {
             val layer = canvas.saveLayerAlpha(0f, 0f, w, h, (overlayAlpha.coerceIn(0f, 1f) * 255f).roundToInt())
-            canvas.drawRoundRect(0f, 0f, w, h, r, r, overlay)
+            canvas.drawRoundRect(0f, 0f, w, h, corner, corner, overlay)
             canvas.restoreToCount(layer)
         }
         if (!shineX.isNaN()) {
@@ -200,6 +215,7 @@ class PillView(context: Context, val block: OcrBlock) : AppCompatTextView(contex
     companion object {
         const val PAD_X_DP = 7f
         const val PAD_Y_DP = 3f
+        private const val CORNER_DP = 12f
         private const val GLOW_R_DP = 12f
         private const val BOX_IN = 260L
         private const val FLASH = 380L
