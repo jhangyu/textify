@@ -28,17 +28,11 @@ class ModelSpec(
     val clean: (String) -> String?,
     val supports: (String) -> Boolean,
 ) {
-    /** Revision and size known; an unpinned spec is listed but never downloads. */
-    val pinned: Boolean get() = revision.isNotEmpty() && size > 0
-
     val url: String get() = "https://huggingface.co/$repo/resolve/$revision/$file"
 }
 
 /** General chat models: no thinking. Every ML Kit language is offered; an unnamed target gets a null prompt -> ML Kit. */
 private val CHAT_CONTEXT: Map<String, Any> = mapOf("enable_thinking" to false)
-
-/** TODO(qwen-pin): (revision, exact byte size) of the uploaded Qwen file (check the file name too); while empty the Qwen row cannot download. */
-private val QWEN_PIN_TODO: Pair<String, Long> = "" to 0L
 
 /** Every selectable translation LLM, in Settings row order; the first is the default active model. */
 val MODELS: List<ModelSpec> = listOf(
@@ -62,7 +56,7 @@ val MODELS: List<ModelSpec> = listOf(
     ModelSpec(
         key = "qwen", title = "Qwen3.8", badge = "2B", glyph = "Q",
         repo = "jhangyu/Qwen3.8-2B-Distill-litert-lm", file = "qwen3.8-2b-distill_q4.litertlm",
-        revision = QWEN_PIN_TODO.first, size = QWEN_PIN_TODO.second,
+        revision = "92ae7e17c6409fc0fcbf519f1154089c6147237b", size = 971_293_456L,
         sampler = Sampler(topK = 10, topP = 0.95, temperature = 0.3),
         context = CHAT_CONTEXT,
         prompt = ChatRules::prompt, clean = ChatRules::clean, supports = { true },

@@ -60,11 +60,10 @@ object Llm {
     /** Model file fully present (the `.part` file is renamed only when complete). */
     fun isDownloaded(ctx: Context, m: ModelSpec): Boolean = modelFile(ctx, m).isFile
 
-    /** Starts or joins the download of [m] (resumable). False = blocked by Wi-Fi-only (waitingWifi set) or [m] unpinned. */
+    /** Starts or joins the download of [m] (resumable). False = blocked by Wi-Fi-only (waitingWifi set). */
     fun download(ctx: Context, m: ModelSpec): Boolean {
         val app = ctx.applicationContext
         val s = slot(m)
-        if (!m.pinned) return false
         if (s.downloading) return true
         if (isDownloaded(app, m)) return true
         if (Prefs.wifiOnly(app) && !Translate.isOnWifi(app)) {

@@ -82,7 +82,6 @@
     <string name="llm_size">約 %1$s GB</string>
     <string name="llm_downloading">下載中 %1$d%%</string>
     <string name="llm_done">已下載</string>
-    <string name="llm_unpinned">尚未提供</string>
     <string name="llm_active">主要翻譯 · %1$s</string>
     <string name="model_builtin">內建</string>
     <string name="model_builtin_sub">隨 App 內建，無法刪除</string>

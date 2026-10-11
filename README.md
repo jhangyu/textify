@@ -44,9 +44,9 @@ paragraph in place with its translation into the target language chosen in Setti
 (ML Kit language identification). Chinese paragraphs with target 繁體中文 only go through OpenCC
 (s2twp, `opencc4j`); other languages go through the active on-device LLM on the LiteRT-LM GPU
 backend (plus OpenCC for 繁體中文). Settings lists three LLMs — Hy-MT2-1.8B (int8, ~1.83 GB),
-Gemma 4 E2B (~2.59 GB) and Qwen3.8-2B-Distill (self-converted `.litertlm`) — each downloadable
-and deletable; tapping one makes it the active translator. Qwen is not downloadable yet: its row
-stays disabled while its revision and size are unpinned (`QWEN_PIN_TODO` in `LlmModels.kt`). Only the active model translates and only
+Gemma 4 E2B (~2.59 GB) and Qwen3.8-2B-Distill (~0.97 GB, hosted at `jhangyu/Qwen3.8-2B-Distill-litert-lm`, converted from
+`empero-ai/Qwen3.8-2B-Distill`) — each downloadable
+and deletable; tapping one makes it the active translator. Only the active model translates and only
 one engine is loaded at a time. Every model file is pinned to a Hugging Face revision and exact size.
 Per paragraph, translation falls back to ML Kit when the active model is not downloaded yet, does not
 cover the language pair, its GPU engine fails to start, or inference fails.

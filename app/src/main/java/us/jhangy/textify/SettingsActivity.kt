@@ -352,7 +352,7 @@ class SettingsActivity : AppCompatActivity() {
         lastRows = next
     }
 
-    private enum class LlmState { UNPINNED, IDLE, DOWNLOADING, WAITING_WIFI, DONE }
+    private enum class LlmState { IDLE, DOWNLOADING, WAITING_WIFI, DONE }
 
     /** Tag of an LLM row in the well (never equal to an ML Kit code tag). */
     private data class LlmTag(val key: String)
@@ -362,7 +362,6 @@ class SettingsActivity : AppCompatActivity() {
     private val llmSub = HashMap<String, TextView>()
 
     private fun llmState(m: ModelSpec) = when {
-        !m.pinned -> LlmState.UNPINNED
         Llm.isDownloaded(this, m) -> LlmState.DONE
         Llm.downloading(m) -> LlmState.DOWNLOADING
         Llm.waitingWifi(m) -> LlmState.WAITING_WIFI
@@ -371,7 +370,6 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun llmSubText(m: ModelSpec, state: LlmState, active: Boolean): String {
         val text = when (state) {
-            LlmState.UNPINNED -> getString(R.string.llm_unpinned)
             LlmState.IDLE -> getString(R.string.llm_size, String.format(Locale.US, "%.2f", m.size / 1e9))
             LlmState.DOWNLOADING -> getString(R.string.llm_downloading, (Llm.progress(m) * 100).toInt())
             LlmState.WAITING_WIFI -> getString(R.string.chip_waiting_wifi)
@@ -417,7 +415,7 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun llmRow(m: ModelSpec, state: LlmState, active: Boolean): View {
-        val grey = state == LlmState.WAITING_WIFI || state == LlmState.UNPINNED
+        val grey = state == LlmState.WAITING_WIFI
         val row = LinearLayout(this).apply {
             tag = LlmTag(m.key)
             orientation = LinearLayout.HORIZONTAL
@@ -451,10 +449,9 @@ class SettingsActivity : AppCompatActivity() {
                     FrameLayout.LayoutParams(px(20f), px(20f), Gravity.CENTER))
                 LlmState.IDLE -> addView(ImageView(context).apply { setImageResource(R.drawable.ic_download); setColorFilter(VIOLET) },
                     FrameLayout.LayoutParams(px(20f), px(20f), Gravity.CENTER))
-                LlmState.UNPINNED -> Unit
             }
         })
-        if (state != LlmState.UNPINNED) row.setOnClickListener { pickLlm(m) }   // ponytail: an unpinned model cannot be picked
+        row.setOnClickListener { pickLlm(m) }
         return row
     }
 
