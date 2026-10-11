@@ -163,9 +163,139 @@ class MainActivity : AppCompatActivity() {
     private fun toast(res: Int) = Toast.makeText(applicationContext, res, Toast.LENGTH_SHORT).show()
 
     // ---- onboarding (B2) ----
-    private fun setupOnboarding(v: ActivityMainBinding) { /* B2 */ }
-    private fun playIntro(v: ActivityMainBinding) { /* B2 */ }
-    private fun refreshState() { /* B2 */ }
+    private fun setupOnboarding(v: ActivityMainBinding) {
+        val d = resources.displayMetrics.density
+        v.root.background = HaloStyle.page(this, HaloStyle.ONBOARDING_SPOTS)
+        ViewCompat.setOnApplyWindowInsetsListener(v.root) { root, insets ->
+            val i = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            root.updatePadding(left = i.left, top = i.top, right = i.right)  // the sheet runs under the nav bar
+            v.actions.updatePadding(bottom = (34 * d).toInt() + i.bottom)
+            v.ready.updateLayoutParams<ViewGroup.MarginLayoutParams> { bottomMargin = (56 * d).toInt() + i.bottom }
+            WindowInsetsCompat.CONSUMED
+        }
+        // re-fit whenever the root or the sheet content changes size (insets, copy swap)
+        v.root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> fitSheet(v) }
+        v.demo.configure(DemoSpec.ONBOARDING)
+        val sheetFill = GradientDrawable().apply {   // top corners only: CssGradientDrawable has one radius
+            setColor(withAlpha(0.94f, 0xFFFFFF))
+            val r = 32 * d
+            cornerRadii = floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f)
+        }
+        v.sheet.background = GlowDrawable(sheetFill, withAlpha(0.14f, 0x7C3AED), 40 * d, -10 * d, 0f, 32 * d)
+        v.track.setLabels(getString(R.string.step_overlay), getString(R.string.step_capture))
+        for (c in v.facts.children) {
+            c.background = CssGradientDrawable(intArrayOf(withAlpha(0.14f, 0xA78BFA), withAlpha(0.10f, 0xF472B6)), null, 135f, -1f)
+        }
+        v.later.background = CssGradientDrawable.solid(withAlpha(0.08f, 0x7C3AED), -1f)
+        v.cta.background = HaloStyle.cta(this)
+        for (dot in listOf(v.dot1, v.dot2, v.dot3)) {
+            dot.background = CssGradientDrawable.solid(0xFFA78BFA.toInt(), -1f)   // 6dp square, r = h/2 = circle
+        }
+        v.cta.setOnClickListener {
+            ctaTapped = true
+            // API 30+ ignores the Uri and opens the app list (§12); one path
+            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+        }
+        v.later.setOnClickListener { later() }
+        ui = if (ctaTapped) Ui.DENIED else Ui.INTRO
+        render(v, animate = false)
+    }
+
+    /** §3.3 intro: stage box and sheet alpha 0 -> 1, translationY 14dp -> 0, introIn 360, stagger 60 (block 0 = status-bar spacer, not drawn). */
+    private fun playIntro(v: ActivityMainBinding) {
+        val dy = 14 * resources.displayMetrics.density
+        listOf(v.demo, v.sheet).forEachIndexed { i, block ->
+            block.alpha = 0f
+            block.translationY = dy
+            block.animate().alpha(1f).translationY(0f)
+                .setStartDelay(INTRO_STAGGER * (i + 1)).setDuration(INTRO_IN).setInterpolator(EMPHASIZED)
+        }
+    }
+
+    /**
+     * Lead ruling (short screens): the sheet starts at 448dp below the status bar when its content fits, otherwise
+     * it moves up just enough to show its natural height (never above the content top); if even that is too small
+     * the ScrollView scrolls. Only re-lays out when the value changes (no layout loop).
+     */
+    private fun fitSheet(v: ActivityMainBinding) {
+        val preferred = (448 * resources.displayMetrics.density).toInt()
+        // natural content height = laid-out body minus what the weighted spacer absorbed (fillViewport);
+        // no extra measure pass, so the real layout is never disturbed
+        val natural = v.sheetBody.height - v.spacer.height
+        val available = v.root.height - v.root.paddingTop
+        val top = (available - natural).coerceIn(0, preferred)
+        val lp = v.sheet.layoutParams as ViewGroup.MarginLayoutParams
+        if (lp.topMargin != top) {
+            lp.topMargin = top
+            v.sheet.post { v.sheet.layoutParams = lp }   // not inside the layout pass
+        }
+    }
+
+    /** Re-reads the overlay permission (onResume and +300 ms); on change swaps copy and state visuals (§3.3). */
+    private fun refreshState() {
+        val v = b ?: return
+        if (closing || ui == Ui.GRANTED) return
+        val next = when {
+            Settings.canDrawOverlays(this) -> Ui.GRANTED
+            ctaTapped -> Ui.DENIED
+            else -> Ui.INTRO
+        }
+        if (next == ui) return
+        ui = next
+        render(v, animate = true)
+        if (next == Ui.GRANTED) main.postDelayed(grantedHold, GRANTED_HOLD)
+    }
+
+    /** §3.2 copy + visuals for [ui]. */
+    private fun render(v: ActivityMainBinding, animate: Boolean) {
+        val granted = ui == Ui.GRANTED
+        when (ui) {
+            Ui.INTRO -> { swap(v.title, R.string.onboard_title, animate); swap(v.lead, R.string.onboard_lead, animate); swap(v.cta, R.string.perm_cta, animate) }
+            Ui.DENIED -> { swap(v.title, R.string.perm_denied_title, animate); swap(v.lead, R.string.onboard_denied_lead, animate); swap(v.cta, R.string.onboard_cta_retry, animate) }
+            Ui.GRANTED -> { swap(v.title, R.string.perm_granted_title, animate); swap(v.lead, R.string.onboard_granted_lead, animate) }
+        }
+        v.demo.setGranted(ui != Ui.DENIED, animate)        // ghostSwap 300 inside CaptureDemoView
+        v.track.setState(
+            when (ui) { Ui.INTRO -> StepTrackView.State.CURRENT; Ui.DENIED -> StepTrackView.State.DENIED; Ui.GRANTED -> StepTrackView.State.GRANTED },
+            animate,
+        )
+        v.cta.isEnabled = !granted
+        v.later.isEnabled = !granted
+        fadeTo(v.cta, if (granted) 0f else 1f, animate)
+        fadeTo(v.later, if (granted) 0f else 1f, animate)
+        fadeTo(v.facts, if (granted) 0.4f else 1f, animate)
+        fadeTo(v.ready, if (granted) 1f else 0f, animate)
+        if (granted && dots.isEmpty()) startDots(v)
+    }
+
+    /** copyOut 120 ease-in -> set text -> copyIn 220. */
+    private fun swap(view: TextView, res: Int, animate: Boolean) {
+        if (!animate) { view.setText(res); return }
+        view.animate().alpha(0f).setStartDelay(0L).setDuration(COPY_OUT).setInterpolator(EASE_IN).withEndAction {
+            view.setText(res)
+            view.animate().alpha(1f).setDuration(COPY_IN).setInterpolator(EASE_OUT)
+        }
+    }
+
+    private fun fadeTo(view: View, to: Float, animate: Boolean) {
+        if (animate) view.animate().alpha(to).setStartDelay(0L).setDuration(STATE_FADE) else view.alpha = to
+    }
+
+    /** §3.1 item 6: dot alpha .3 -> 1 (30%) -> .3 (60%) -> .3, 1200 ms loop, delays 0/150/300. */
+    private fun startDots(v: ActivityMainBinding) {
+        listOf(v.dot1, v.dot2, v.dot3).forEachIndexed { i, dot ->
+            val pulse = PropertyValuesHolder.ofKeyframe(
+                View.ALPHA,
+                Keyframe.ofFloat(0f, 0.3f), Keyframe.ofFloat(0.3f, 1f), Keyframe.ofFloat(0.6f, 0.3f), Keyframe.ofFloat(1f, 0.3f),
+            )
+            dots += ObjectAnimator.ofPropertyValuesHolder(dot, pulse).apply {
+                duration = DOT_LOOP
+                repeatCount = ValueAnimator.INFINITE
+                startDelay = DOT_DELAY * i
+                start()
+            }
+        }
+    }
 
     companion object {
         private const val KEY_REQUESTED = "captureRequested"
