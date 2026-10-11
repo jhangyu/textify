@@ -154,7 +154,7 @@ class SessionActivity : AppCompatActivity() {
         val d = resources.displayMetrics.density
         val padX = (PillView.PAD_X_DP * d).roundToInt()
         val padY = (PillView.PAD_Y_DP * d).roundToInt()
-        blocks = found.sortedWith(compareBy({ it.box.top }, { it.box.left }))
+        blocks = found                        // mergeOcr order (top, then left): pills, selection and translation all index this list
         states = arrayOfNulls(blocks.size)
         tideAt = LongArray(blocks.size)
         val n = blocks.size

@@ -65,17 +65,29 @@ private const val MAX_GAP = 0.6f        // vertical gap / line height; ordinary 
 private const val MAX_INDENT = 2f       // left-edge shift / line height
 private const val MAX_HEIGHT_RATIO = 1.3f   // headings vs body text differ more than this
 private const val MIN_X_OVERLAP = 0.5f  // share of the narrower box's width
+private const val SHORT_TAIL = 3f       // max width / line height of a 1-2 char last line
 
 private fun lineHeight(c: OcrCandidate): Float = c.lines.map { it.height }.average().toFloat()
 
-/** True when [b] reads as the continuation of [a]: directly below, similar line height, same column. */
+private fun centerY(b: Box): Float = (b.top + b.bottom) / 2f
+
+/**
+ * True when [b] reads as the continuation of [a]: directly below, similar line height, same column.
+ * ML Kit line boxes hug the ink, so a 1-2 char last line ("on.", "了。") is shorter than [a]'s lines and starts lower;
+ * such a narrow single line is judged by [a]'s line height and the line-centre pitch instead of its own height.
+ */
 private fun continues(a: OcrCandidate, b: OcrCandidate): Boolean {
     val ha = lineHeight(a)
     val hb = lineHeight(b)
-    val h = min(ha, hb)
-    if (h <= 0f || max(ha, hb) / h > MAX_HEIGHT_RATIO) return false
+    if (ha <= 0f || hb <= 0f) return false
+    val tail = b.lines.size == 1 && hb < ha && b.box.width <= SHORT_TAIL * ha
+    val h = if (tail) ha else min(ha, hb)
+    if (!tail && max(ha, hb) / h > MAX_HEIGHT_RATIO) return false
     val gap = b.box.top - a.box.bottom
-    if (gap < -0.2f * h || gap > MAX_GAP * h) return false      // negative = overlapped, e.g. side by side
+    if (gap < -0.2f * h) return false                                   // overlapped, e.g. side by side
+    if (tail) {
+        if (centerY(b.box) - centerY(a.lines.last()) > (1 + MAX_GAP) * h) return false   // = gap ≤ MAX_GAP·h at full height
+    } else if (gap > MAX_GAP * h) return false
     if (kotlin.math.abs(a.box.left - b.box.left) > MAX_INDENT * h) return false
     val overlap = min(a.box.right, b.box.right) - max(a.box.left, b.box.left)
     return overlap >= MIN_X_OVERLAP * min(a.box.width, b.box.width)

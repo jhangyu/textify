@@ -100,4 +100,35 @@ class OcrMergeTest {
         val heading = mergeOcr(listOf(p("TITLE", 100, 100, 400, 40, 1), p("body", 100, 146, 400, 20, 1)))
         assertEquals(2, heading.size)
     }
+    // ML Kit line boxes hug the ink: a 1-2 char last line ("on.", "了。") is shorter than the paragraph's lines and its
+    // top sits lower, so its own height must not decide whether it continues the paragraph.
+    private fun tail(text: String, l: Int, t: Int, r: Int, b: Int) = OcrCandidate(text, Box(l, t, r, b), listOf(Box(l, t, r, b)), 0.9f)
+
+    @Test
+    fun latinShortLastLineIsJoined() {
+        // body lines h20 pitch 26 (ascender..descender); tail "on." x-height only: top 158, bottom 169 (h11)
+        val out = mergeOcr(listOf(p("the sentence goes\nall the way", 100, 100, 400, 20, 2), tail("on.", 100, 158, 130, 169)))
+        assertEquals(listOf("the sentence goes\nall the way\non."), out.map { it.text })
+    }
+
+    @Test
+    fun cjkShortLastLineIsJoined() {
+        // tail "了。": "。" sits low, ML Kit box h12 starting 4px below the line top
+        val out = mergeOcr(listOf(p("第一行文字很長很長\n第二行也很長很長", 100, 100, 400, 20, 2), tail("了。", 100, 156, 136, 168)))
+        assertEquals(1, out.size)
+        assertEquals("第一行文字很長很長\n第二行也很長很長\n了。", out[0].text)
+    }
+
+    @Test
+    fun cjkTwoFullHeightCharsLastLineIsJoined() {
+        val out = mergeOcr(listOf(p("第一行\n第二行", 100, 100, 400, 20, 2), tail("完成", 100, 152, 140, 172)))
+        assertEquals(1, out.size)
+    }
+
+    @Test
+    fun shortLineFarBelowStaysApart() {
+        // same tail one blank line lower: a separate paragraph, not a wrap
+        val out = mergeOcr(listOf(p("one\ntwo", 100, 100, 400, 20, 2), tail("了。", 100, 182, 136, 194)))
+        assertEquals(2, out.size)
+    }
 }
