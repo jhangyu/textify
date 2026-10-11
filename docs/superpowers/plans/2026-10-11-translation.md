@@ -1,8 +1,8 @@
-# Offline Translation + Paragraph OCR — Implementation Plan
+# On-device Translation + Paragraph OCR — Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use podium:team-spawn (recommended) or podium:team-fable to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** OCR returns paragraphs instead of lines, and a translate button on the session screen replaces each paragraph in place with an offline translation (ML Kit + OpenCC for 繁體中文), with per-paragraph status chips, a bottom panel for truncated boxes and a 「翻譯」 card in Settings.
+**Goal:** OCR returns paragraphs instead of lines, and a translate button on the session screen replaces each paragraph in place with an on-device translation (ML Kit + OpenCC for 繁體中文), with per-paragraph status chips, a bottom panel for truncated boxes and a 「翻譯」 card in Settings.
 
 **Architecture:** Pure Kotlin rules (merge, routing, fitting, colours, model rows) live in small JVM-tested files; `Translate.kt` is the only ML Kit translation / language-id caller and reports one `ParagraphState` per paragraph on the main thread; `PillView` gains a translated mode (solid card drawn in software) so one view per paragraph keeps the existing tap / long-press / copy wiring; `SessionActivity` and `SettingsActivity` only orchestrate. Visual source of truth: `docs/design/mockups/translation/proposal-2-prism-tide.html` (header comment), truncation mark from `proposal-1-quiet-reprint.html`.
 
@@ -280,7 +280,7 @@ internal fun Rect.toBox(): Box = Box(left, top, right, bottom)
 
 private fun Box.toRect(): Rect = Rect(left, top, right, bottom)
 
-/** Offline OCR. Every selected script model runs fully offline, all in parallel on the same image. */
+/** On-device OCR. Every selected script model runs fully offline, all in parallel on the same image. */
 object Ocr {
     /**
      * Calls [onResult] exactly once on the main thread after every recognizer completed; overlapping paragraphs
@@ -1007,7 +1007,7 @@ object OpenCc {
         ZhTwConverterUtil.toTraditional(text)
     } catch (e: Exception) {
         text
-    } catch (e: LinkageError) {          // dictionary / class initialisation failure on Android
+    } catch (e: LinkageError) {          // dictionary / class initialisation failure on a device
         text
     }
 }
@@ -1239,13 +1239,13 @@ git status --porcelain -- app/build.gradle.kts app/src/main/java/us/jhangy/texti
 - `start` (spec §2): reports `Translating` for every given paragraph, identifies each paragraph's language with one `LanguageIdentifier` (input `flatten(text, null)`; failure → `und`, spec §5), then routes with `route(tag, TranslateLanguage.fromLanguageTag(tag), target)`:
   - `NotNeeded` / `Unsupported` → reported at once;
   - `OpenCcOnly` → OpenCC on a background thread, then `openCcOnlyResult(original, converted)`;
-  - `MlKit(source, openCc)` → grouped by source language: one model check/download and one `Translator` per source. Models needed = {source, target.mlkit}. All models present → `Translating`, translate each paragraph's `flatten(text, source)`; success → `Done(result, source)` (OpenCC first when `openCc`; OpenCC failure returns the ML Kit text, spec §5); failure → only that paragraph `Failed`.
+  - `MlKit(source, openCc)` → grouped by source language: one model check/download and one `Translator` per source. Models needed = {source, target.mlkit}. All on device → `Translating`, translate each paragraph's `flatten(text, source)`; success → `Done(result, source)` (OpenCC first when `openCc`; OpenCC failure returns the ML Kit text, spec §5); failure → only that paragraph `Failed`.
   - A model is missing → `download()`; if any needed model returns null (Wi-Fi-only, no Wi-Fi) the group becomes `WaitingWifi`; otherwise `Downloading` until `Tasks.whenAll` completes → translate, or `Failed` (spec §5; the language leaves the downloading set).
 - `download` uses `RemoteModelManager` (survives the session closing), joins an in-flight download of the same language, never queues when `Prefs.wifiOnly` and `!isOnWifi` (adds the language to `waitingWifi`), passes `requireWifi()` when Wi-Fi-only is on, and removes a language from `waitingWifi` when its download starts. `downloading` / `waitingWifi` are process-wide and read by the session and Settings; `onModelsChanged` fires on every change.
 - `isOnWifi`: active network has `NetworkCapabilities.TRANSPORT_WIFI`.
 - `TranslateRun.close()`: drops all later callbacks (spec §5 "late results are ignored"), closes the identifier and translators; downloads continue.
 - All callbacks run on the main thread (ML Kit `Task` listeners default to it; OpenCC results are posted back).
-- README: intro adds offline translation; OCR section says "OCR runs fully offline; translation runs offline after a one-time model download (~30 MB per language)"; new "Translation" section describes the button, routing and Settings; Stack line lists the three new artifacts.
+- README: intro adds on-device translation; OCR section says "OCR runs fully offline; translation runs offline after a one-time model download (~30 MB per language)"; new "Translation" section describes the button, routing and Settings; Stack line lists the three new artifacts.
 
 **Constraints:**
 - Only file calling `com.google.mlkit.nl.*`: `Translate.kt`.
@@ -1269,7 +1269,7 @@ git status --porcelain -- app/build.gradle.kts app/src/main/java/us/jhangy/texti
 
 ```kotlin
 
-    // Offline translation (translation spec §2): ML Kit translate (models downloaded on demand through
+    // On-device translation (translation spec §2): ML Kit translate (models downloaded on demand through
     // RemoteModelManager) + bundled language identification. Google Maven latest, verified 2026-10-11.
     implementation("com.google.mlkit:translate:17.0.3")
     implementation("com.google.mlkit:language-id:17.0.6")
@@ -1359,7 +1359,7 @@ import com.google.mlkit.nl.translate.TranslatorOptions
 import java.util.concurrent.Executors
 
 /**
- * Offline translation engine (translation spec §2): the only code that calls ML Kit translation and
+ * On-device translation engine (translation spec §2): the only code that calls ML Kit translation and
  * language identification. Main thread only; OpenCC runs on [openCcThread] and posts back.
  */
 object Translate {
@@ -1554,7 +1554,7 @@ class TranslateRun internal constructor(
 
 - [ ] **Step 5: Update `README.md`**
 
-Intro: after `Android 8+ device.` add the sentence `Recognised paragraphs can also be translated offline (Google ML Kit translation + OpenCC).`
+Intro: after `Android 8+ device.` add the sentence `Recognised paragraphs can also be translated on device (Google ML Kit translation + OpenCC).`
 "OCR languages": replace `one is kept (`OcrMerge.kt`). All run fully offline. See `Ocr.kt`.` with `one is kept (`OcrMerge.kt`). OCR runs fully offline; translation runs offline after a one-time model download (see Translation). See `Ocr.kt`.`
 Insert before `## Build`:
 
@@ -1562,7 +1562,7 @@ Insert before `## Build`:
 ## Translation
 The translate button next to the settings button (shown once OCR found text) replaces every
 paragraph in place with its translation into the target language chosen in Settings (default
-繁體中文); press it again for the original. Each paragraph's language is detected offline
+繁體中文); press it again for the original. Each paragraph's language is detected on device
 (ML Kit language identification). Chinese paragraphs with target 繁體中文 only go through OpenCC
 (s2twp, `opencc4j`); other languages go through ML Kit translation (plus OpenCC for 繁體中文).
 Language models (~30 MB each) download automatically on first use, optionally only on Wi-Fi;

@@ -1,9 +1,9 @@
-# Offline translation + paragraph OCR — design
+# On-device translation + paragraph OCR — design
 
 Status: design approved; mockup picked (`docs/design/mockups/translation/proposal-2-prism-tide.html`); implementation plan next.
 
 ## Decisions (user)
-1. Engine: ML Kit offline translation (`com.google.mlkit:translate`). Language models (~30 MB each) are
+1. Engine: ML Kit on-device translation (`com.google.mlkit:translate`). Language models (~30 MB each) are
    downloaded from Google on first use, then run offline. Adds the INTERNET permission. README's "fully offline"
    wording changes to "OCR fully offline; translation offline after a one-time model download".
 2. Display: translated text replaces the original in place; when it does not fit, a bottom panel shows it.
