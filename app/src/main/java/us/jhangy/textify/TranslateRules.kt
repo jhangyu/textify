@@ -54,17 +54,21 @@ sealed class Route {
 }
 
 /** Translation engine for one paragraph. */
-enum class Engine { HYMT, MLKIT }
+enum class Engine { LLM, MLKIT }
 
-/** Hy-MT2 only when its model is downloaded, the GPU engine has not failed, and it supports both languages; else ML Kit. */
+/**
+ * The [active] LLM only when its model is downloaded, its GPU engine has not failed, and it supports both languages;
+ * else ML Kit. [downloaded] / [gpuFailed] = model keys, so another model's state never counts.
+ */
 internal fun engineFor(
     source: String,
     target: TargetLang,
-    downloaded: Boolean,
-    gpuFailed: Boolean,
-    supports: (String) -> Boolean,
+    active: ModelSpec,
+    downloaded: Set<String>,
+    gpuFailed: Set<String>,
 ): Engine =
-    if (downloaded && !gpuFailed && supports(source) && supports(target.mlkit)) Engine.HYMT else Engine.MLKIT
+    if (active.key in downloaded && active.key !in gpuFailed && active.supports(source) && active.supports(target.mlkit)) Engine.LLM
+    else Engine.MLKIT
 
 /** ML Kit language-id tag for "undetermined" (LanguageIdentifier.UNDETERMINED_LANGUAGE_TAG). */
 const val UNDETERMINED = "und"

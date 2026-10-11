@@ -116,30 +116,39 @@ class TranslateRulesTest {
         assertEquals(Route.NotNeeded, route("zh-Latn", "zh", hant))
     }
 
-    private val all: (String) -> Boolean = { true }
+    private fun spec(key: String, supports: (String) -> Boolean = { true }) = ModelSpec(
+        key, key, "", "", "repo", "f.litertlm", "rev", 1L, Sampler(1, 1.0, 1.0), emptyMap(), { _, _ -> "" }, { it }, supports,
+    )
+
+    private val a = spec("a")
 
     @Test
-    fun engineForReadyAndSupportedIsHyMt() {
-        assertEquals(Engine.HYMT, engineFor("ja", hant, true, false, all))
+    fun engineForReadyAndSupportedIsLlm() {
+        assertEquals(Engine.LLM, engineFor("ja", hant, a, setOf("a"), emptySet()))
     }
 
     @Test
-    fun engineForNotDownloadedIsMlKit() {
-        assertEquals(Engine.MLKIT, engineFor("ja", hant, false, false, all))
+    fun engineForActiveNotDownloadedIsMlKit() {
+        assertEquals(Engine.MLKIT, engineFor("ja", hant, a, setOf("b"), emptySet()))   // another model on disk does not count
     }
 
     @Test
-    fun engineForGpuFailedIsMlKit() {
-        assertEquals(Engine.MLKIT, engineFor("ja", hant, true, true, all))
+    fun engineForActiveGpuFailedIsMlKit() {
+        assertEquals(Engine.MLKIT, engineFor("ja", hant, a, setOf("a"), setOf("a")))
+    }
+
+    @Test
+    fun engineForOtherModelGpuFailedIsLlm() {
+        assertEquals(Engine.LLM, engineFor("ja", hant, a, setOf("a", "b"), setOf("b")))   // gpuFailed is per model
     }
 
     @Test
     fun engineForUnsupportedSourceIsMlKit() {
-        assertEquals(Engine.MLKIT, engineFor("ja", en, true, false) { it != "ja" })
+        assertEquals(Engine.MLKIT, engineFor("ja", en, spec("a") { it != "ja" }, setOf("a"), emptySet()))
     }
 
     @Test
     fun engineForUnsupportedTargetIsMlKit() {
-        assertEquals(Engine.MLKIT, engineFor("ja", en, true, false) { it != "en" })
+        assertEquals(Engine.MLKIT, engineFor("ja", en, spec("a") { it != "en" }, setOf("a"), emptySet()))
     }
 }

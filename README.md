@@ -42,12 +42,18 @@ The translate button next to the settings button (shown once OCR found text) rep
 paragraph in place with its translation into the target language chosen in Settings (default
 繁體中文); press it again for the original. Each paragraph's language is detected on device
 (ML Kit language identification). Chinese paragraphs with target 繁體中文 only go through OpenCC
-(s2twp, `opencc4j`); other languages go through Hy-MT2-1.8B (int8 `.litertlm`, ~1.83 GB) on the
-LiteRT-LM GPU backend (plus OpenCC for 繁體中文). Per paragraph, translation falls back to ML Kit
-when Hy-MT2 is not downloaded yet, the GPU engine fails to start, or inference fails.
-Hy-MT2 and the ML Kit fallback language models (~30 MB each) download automatically on first use,
-optionally only on Wi-Fi; Settings lists, pre-downloads and deletes them (Hy-MT2 row on top).
-Rules: `TranslateRules.kt`; engines: `HyMt.kt` (Hy-MT2), `Translate.kt` (routing + ML Kit).
+(s2twp, `opencc4j`); other languages go through the active on-device LLM on the LiteRT-LM GPU
+backend (plus OpenCC for 繁體中文). Settings lists three LLMs — Hy-MT2-1.8B (int8, ~1.83 GB),
+Gemma 4 E2B (~2.59 GB) and Qwen3.8-2B-Distill (~0.97 GB, hosted at `jhangyu/Qwen3.8-2B-Distill-litert-lm`, converted from
+`empero-ai/Qwen3.8-2B-Distill`) — each downloadable
+and deletable; tapping one makes it the active translator. Only the active model translates and only
+one engine is loaded at a time. Every model file is pinned to a Hugging Face revision and exact size.
+Per paragraph, translation falls back to ML Kit when the active model is not downloaded yet, does not
+cover the language pair, its GPU engine fails to start, or inference fails.
+The active LLM and the ML Kit fallback language models (~30 MB each) download automatically on first
+use, optionally only on Wi-Fi; Settings lists, pre-downloads and deletes them (LLM rows on top).
+Rules: `TranslateRules.kt`, `HyMtRules.kt` (Hy-MT2), `ChatRules.kt` (Gemma, Qwen); model specs:
+`LlmModels.kt`; engines: `Llm.kt` (one LiteRT-LM engine for every spec), `Translate.kt` (routing + ML Kit).
 
 ## Build
 Needs JDK 17 or 21 (not 25), Android SDK with platform 36.
@@ -59,6 +65,6 @@ python3 scripts/build_release.py   # signed release APK
 `local.properties` must point `sdk.dir` at your Android SDK.
 
 ## Stack
-AGP 8.13.2, Gradle 8.14.6, Kotlin 2.3.21, LiteRT-LM litertlm-android 0.18.0 (Hy-MT2; needs Kotlin >= 2.3), ML Kit text-recognition 16.0.1, ML Kit translate 17.0.3, language-id 17.0.6, opencc4j 1.14.0.
+AGP 8.13.2, Gradle 8.14.6, Kotlin 2.3.21, LiteRT-LM litertlm-android 0.18.0 (Hy-MT2, Gemma 4 E2B, Qwen3.8-2B-Distill; needs Kotlin >= 2.3), ML Kit text-recognition 16.0.1, ML Kit translate 17.0.3, language-id 17.0.6, opencc4j 1.14.0.
 AGP 9.x + latest androidx were tried but 9.x's built-in Kotlin plugin conflicts
 with the standard kotlin-android plugin; pinned to the proven 8.13 line.
