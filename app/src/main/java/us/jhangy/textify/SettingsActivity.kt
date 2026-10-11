@@ -95,6 +95,7 @@ class SettingsActivity : AppCompatActivity() {
         b.demo.resume()                             // no-op while denied
         main.postDelayed(recheck, RECHECK)
         Translate.onModelsChanged = { refreshModels() }   // a session download may finish while Settings is open
+        HyMt.onChanged = { onHyMtChanged() }
         refreshModels()                                    // spec §4: query ML Kit every time Settings opens
         b.trPreview.resume()
     }
@@ -103,6 +104,7 @@ class SettingsActivity : AppCompatActivity() {
         main.removeCallbacks(recheck)
         b.demo.pause()
         Translate.onModelsChanged = null
+        HyMt.onChanged = null
         b.trPreview.pause()
         super.onPause()
     }
@@ -287,6 +289,7 @@ class SettingsActivity : AppCompatActivity() {
             showWifi(animate = true)
             if (!wifiOnly) {                                  // Wi-Fi-only off: retry what waited for Wi-Fi
                 Translate.waitingWifi.forEach { Translate.download(this, it) }
+                if (HyMt.waitingWifi) HyMt.download(this)
                 refreshModels()
             }
         }
@@ -327,8 +330,10 @@ class SettingsActivity : AppCompatActivity() {
     private fun renderModels(rows: List<Pair<String, ModelState>>) {
         val next = rows.toMap()
         val well = b.modelWell
-        for (i in well.childCount - 1 downTo 0) if (well.getChildAt(i).tag !in next) well.removeViewAt(i)
-        rows.forEachIndexed { index, (code, state) ->
+        for (i in well.childCount - 1 downTo 0) if (well.getChildAt(i).tag.let { it != HYMT && it !in next }) well.removeViewAt(i)
+        renderHyMt()
+        rows.forEachIndexed { rowIndex, (code, state) ->
+            val index = rowIndex + 1                          // Hy-MT2 row is first
             val existing = (0 until well.childCount).map { well.getChildAt(it) }.firstOrNull { it.tag == code }
             if (existing == null) {
                 well.addView(modelRow(code, state), index)
@@ -344,6 +349,88 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
         lastRows = next
+    }
+
+    private enum class HyState { IDLE, DOWNLOADING, WAITING_WIFI, DONE }
+
+    private var lastHy: HyState? = null
+    private var hySub: TextView? = null
+
+    private fun hyState() = when {
+        HyMt.isDownloaded(this) -> HyState.DONE
+        HyMt.downloading -> HyState.DOWNLOADING
+        HyMt.waitingWifi -> HyState.WAITING_WIFI
+        else -> HyState.IDLE
+    }
+
+    private fun hySubText(state: HyState) = when (state) {
+        HyState.IDLE -> getString(R.string.hymt_sub)
+        HyState.DOWNLOADING -> getString(R.string.hymt_downloading, (HyMt.progress * 100).toInt())
+        HyState.WAITING_WIFI -> getString(R.string.chip_waiting_wifi)
+        HyState.DONE -> getString(R.string.hymt_done_sub)
+    }
+
+    /** HyMt state or progress changed: re-render on a state change, else only update the % text. */
+    private fun onHyMtChanged() {
+        val state = hyState()
+        if (state != lastHy) renderHyMt() else if (state == HyState.DOWNLOADING) hySub?.text = hySubText(state)
+    }
+
+    /** Keeps the single Hy-MT2 row at index 0 of the well in sync with HyMt (same swap / sparkle as the ML Kit rows). */
+    private fun renderHyMt() {
+        val state = hyState()
+        if (state == lastHy) return
+        val well = b.modelWell
+        val existing = (0 until well.childCount).map { well.getChildAt(it) }.firstOrNull { it.tag == HYMT }
+        val row = hymtRow(state)
+        val transition = well.layoutTransition
+        if (existing != null) { well.layoutTransition = null; well.removeView(existing) }
+        well.addView(row, 0)
+        well.layoutTransition = transition
+        if (lastHy == HyState.DOWNLOADING && state == HyState.DONE) sparkle(row)
+        lastHy = state
+    }
+
+    private fun hymtRow(state: HyState): View {
+        val waiting = state == HyState.WAITING_WIFI
+        val row = LinearLayout(this).apply {
+            tag = HYMT
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPaddingRelative(px(10f), 0, px(4f), 0)
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(60f))
+        }
+        row.addView(disc("Hy", 14f, waiting), LinearLayout.LayoutParams(px(38f), px(38f)))
+        val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val titleRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = true }
+        titleRow.addView(label("Hy-MT2", 15f, true, if (waiting) GREY else INK))
+        titleRow.addView(label("1.8B", 12f, true, if (waiting) GREY else SECONDARY).apply { setPaddingRelative(px(6f), 0, 0, 0) })
+        texts.addView(titleRow)
+        val subColor = when (state) { HyState.DOWNLOADING -> VIOLET; HyState.WAITING_WIFI -> GREY; else -> SECONDARY }
+        hySub = label(hySubText(state), 12.5f, state == HyState.DOWNLOADING, subColor).also { texts.addView(it) }
+        row.addView(texts, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = px(12f) })
+        row.addView(FrameLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(px(44f), px(44f))
+            when (state) {
+                HyState.DONE -> {
+                    background = pressed(oval(withAlpha(0.16f, 0xF472B6)), null)
+                    contentDescription = getString(R.string.model_delete, "Hy-MT2")
+                    isClickable = true
+                    isFocusable = true
+                    addView(ImageView(context).apply { setImageResource(R.drawable.ic_trash) }, FrameLayout.LayoutParams(px(20f), px(20f), Gravity.CENTER))
+                    setOnClickListener { HyMt.delete(this@SettingsActivity); renderHyMt() }
+                }
+                HyState.DOWNLOADING -> addView(SpinnerRingView(context).apply { strokePx = 3 * d }, FrameLayout.LayoutParams(px(22f), px(22f), Gravity.CENTER))
+                HyState.WAITING_WIFI -> addView(ImageView(context).apply { setImageResource(R.drawable.ic_chip_wifi); setColorFilter(GREY) },
+                    FrameLayout.LayoutParams(px(20f), px(20f), Gravity.CENTER))
+                HyState.IDLE -> addView(ImageView(context).apply { setImageResource(R.drawable.ic_download); setColorFilter(VIOLET) },
+                    FrameLayout.LayoutParams(px(20f), px(20f), Gravity.CENTER))
+            }
+        })
+        if (state == HyState.IDLE || waiting) {              // tap to (re)start; download() re-checks the network
+            row.setOnClickListener { HyMt.download(this); renderHyMt() }
+        }
+        return row
     }
 
     /** prism-tide .mrow: 60dp, disc 38dp, title + small name, status line, right-side action / state. */
@@ -576,6 +663,7 @@ class SettingsActivity : AppCompatActivity() {
         private const val BLOCK_HOLD = 1500L
         // translation card (prism-tide TIMINGS, ms)
         private const val TOGGLE = 200L
+        private const val HYMT = "hymt"
         private const val ROW_ANIM = 260L
         private const val SPARKLE = 380L
         private const val SHEET_IN = 300L

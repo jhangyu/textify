@@ -1,3 +1,5 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -42,12 +44,13 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
-    }
     buildFeatures {
         viewBinding = true
     }
+}
+
+kotlin {
+    compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
 }
 
 dependencies {
@@ -70,6 +73,10 @@ dependencies {
     // RemoteModelManager) + bundled language identification. Google Maven latest, verified 2026-10-11.
     implementation("com.google.mlkit:translate:17.0.3")
     implementation("com.google.mlkit:language-id:17.0.6")
+
+    // Hy-MT2-1.8B on-device LLM translation (GPU). Google Maven latest 0.18.0, verified 2026-10-11; needs Kotlin >= 2.3.
+    // No R8 keep rules: release builds are not minified (LiteRT-LM issue #3739 needs them once minify is on).
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.18.0")
 
     testImplementation("junit:junit:4.13.2")
 }

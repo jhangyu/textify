@@ -53,6 +53,19 @@ sealed class Route {
     data class MlKit(val source: String, val openCc: Boolean) : Route()
 }
 
+/** Translation engine for one paragraph. */
+enum class Engine { HYMT, MLKIT }
+
+/** Hy-MT2 only when its model is downloaded, the GPU engine has not failed, and it supports both languages; else ML Kit. */
+internal fun engineFor(
+    source: String,
+    target: TargetLang,
+    downloaded: Boolean,
+    gpuFailed: Boolean,
+    supports: (String) -> Boolean,
+): Engine =
+    if (downloaded && !gpuFailed && supports(source) && supports(target.mlkit)) Engine.HYMT else Engine.MLKIT
+
 /** ML Kit language-id tag for "undetermined" (LanguageIdentifier.UNDETERMINED_LANGUAGE_TAG). */
 const val UNDETERMINED = "und"
 

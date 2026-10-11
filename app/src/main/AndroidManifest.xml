@@ -17,6 +17,10 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Textify">
 
+        <!-- LiteRT-LM GPU backend (Hy-MT2): OpenCL + vndk loaded from the system when present -->
+        <uses-native-library android:name="libOpenCL.so" android:required="false" />
+        <uses-native-library android:name="libvndksupport.so" android:required="false" />
+
         <activity
             android:name=".MainActivity"
             android:excludeFromRecents="true"

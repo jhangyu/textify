@@ -145,16 +145,42 @@ class TranslateRun internal constructor(
     private fun dispatch(texts: Map<Int, String>, detected: Map<Int, String>) {
         if (closed) return
         val groups = LinkedHashMap<String, MutableList<Int>>()   // §2 step 3: one model check + translator per source
+        var hyMtRequested = false
         for ((i, tag) in detected) {
             val text = texts.getValue(i)
             when (val r = route(tag, TranslateLanguage.fromLanguageTag(tag), target)) {
                 Route.NotNeeded -> report(i, ParagraphState.NotNeeded)
                 Route.Unsupported -> report(i, ParagraphState.Unsupported)
                 Route.OpenCcOnly -> Translate.openCc(text) { report(i, openCcOnlyResult(text, it)) }
-                is Route.MlKit -> groups.getOrPut(r.source) { ArrayList() } += i
+                is Route.MlKit -> {
+                    val downloaded = HyMt.isDownloaded(app)
+                    val engine = engineFor(r.source, target, downloaded, HyMt.gpuFailed, HyMt::supports)
+                    if (engine == Engine.HYMT) {
+                        translateHyMt(i, r.source, texts)
+                    } else {
+                        // Hy-MT2 missing but usable for this pair: fetch it for next time, translate with ML Kit now.
+                        if (!downloaded && !hyMtRequested && HyMt.supports(r.source) && HyMt.supports(target.mlkit)) {
+                            hyMtRequested = true
+                            HyMt.download(app)
+                        }
+                        groups.getOrPut(r.source) { ArrayList() } += i
+                    }
+                }
             }
         }
         for ((source, idx) in groups) translateGroup(source, idx, texts)
+    }
+
+    /** Hy-MT2 path for one paragraph; a null result (any failure) sends it through ML Kit. */
+    private fun translateHyMt(i: Int, source: String, texts: Map<Int, String>) {
+        HyMt.translate(app, flatten(texts.getValue(i), source), source, target) { out ->
+            if (closed) return@translate
+            when {
+                out == null -> translateGroup(source, listOf(i), texts)   // per-paragraph ML Kit fallback
+                target.openCc -> Translate.openCc(out) { report(i, ParagraphState.Done(it, source)) }
+                else -> report(i, ParagraphState.Done(out, source))
+            }
+        }
     }
 
     private fun translateGroup(source: String, idx: List<Int>, texts: Map<Int, String>) {

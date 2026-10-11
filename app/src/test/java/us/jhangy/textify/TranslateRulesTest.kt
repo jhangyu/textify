@@ -115,4 +115,31 @@ class TranslateRulesTest {
         assertEquals(Route.NotNeeded, route("ja-Latn", null, hant))
         assertEquals(Route.NotNeeded, route("zh-Latn", "zh", hant))
     }
+
+    private val all: (String) -> Boolean = { true }
+
+    @Test
+    fun engineForReadyAndSupportedIsHyMt() {
+        assertEquals(Engine.HYMT, engineFor("ja", hant, true, false, all))
+    }
+
+    @Test
+    fun engineForNotDownloadedIsMlKit() {
+        assertEquals(Engine.MLKIT, engineFor("ja", hant, false, false, all))
+    }
+
+    @Test
+    fun engineForGpuFailedIsMlKit() {
+        assertEquals(Engine.MLKIT, engineFor("ja", hant, true, true, all))
+    }
+
+    @Test
+    fun engineForUnsupportedSourceIsMlKit() {
+        assertEquals(Engine.MLKIT, engineFor("ja", en, true, false) { it != "ja" })
+    }
+
+    @Test
+    fun engineForUnsupportedTargetIsMlKit() {
+        assertEquals(Engine.MLKIT, engineFor("ja", en, true, false) { it != "en" })
+    }
 }
