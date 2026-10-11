@@ -11,26 +11,36 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.Shader
 import android.os.Bundle
+import android.text.StaticLayout
+import android.text.TextPaint
 import android.util.TypedValue
 import android.view.GestureDetector
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.animation.LinearInterpolator
 import android.view.animation.PathInterpolator
 import androidx.appcompat.widget.AppCompatTextView
 import androidx.core.animation.doOnEnd
 import androidx.core.widget.TextViewCompat
+import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
- * One OCR paragraph as an a2 "Halo" box. The paragraph's text is real, selectable and transparent, laid out
- * line by line on the screenshot's OCR line boxes (translation spec §1), so long-press gives system handles
- * + copy menu on the glyphs. Tap is detected with GestureDetector: a selectable TextView is focusable in touch
- * mode, so the first tap would only take focus and never reach an OnClickListener.
+ * One OCR paragraph as an a2 "Halo" box with two modes (translation spec §1, §3).
+ * Original: the paragraph's text is real, selectable and transparent, laid out line by line on the screenshot's
+ * OCR line boxes, so long-press gives system handles + copy menu on the glyphs.
+ * Translated: a solid card in the screenshot's edge colour hides the glyphs and shows the translation as real,
+ * selectable text, fitted down to 10sp and truncated with a "⋯" mark below that.
+ * Tap is detected with GestureDetector: a selectable TextView is focusable in touch mode, so the first tap would
+ * only take focus and never reach an OnClickListener.
  */
 @SuppressLint("ViewConstructor")
 class PillView(context: Context, val block: OcrBlock) : AppCompatTextView(context) {
+
+    /** How the translated card appears / disappears. */
+    enum class Reveal { NONE, TOP_DOWN, LEFT_RIGHT }
 
     /** Single tap. dismissOnly = a text selection was alive when the finger went down. */
     var onTap: ((pill: PillView, dismissOnly: Boolean) -> Unit)? = null
@@ -45,16 +55,58 @@ class PillView(context: Context, val block: OcrBlock) : AppCompatTextView(contex
             invalidate()
         }
 
+    /** Translation shown (or still animating out); null once the original layout is back. */
+    var translationText: String? = null
+        private set
+
+    /** True from showTranslation until showOriginal is called. */
+    var showsTranslation = false
+        private set
+
+    /** The translation did not fit at 10sp: text cut to whole lines and the "⋯" mark drawn (spec §3). */
+    var truncated = false
+        private set
+
+    /** Paragraph is Translating: light shimmer over the original pill (prism-tide note 3). */
+    var shimmering = false
+        set(value) {
+            if (field == value) return
+            field = value
+            if (value) startShimmer() else stopShimmer()
+        }
+
+    /** Bottom panel open for this paragraph: the card glow pulses (prism-tide note 9). */
+    var focused = false
+        set(value) {
+            if (field == value) return
+            field = value
+            if (value) startFocus() else stopFocus()
+        }
+
     private val dp = resources.displayMetrics.density
     private var painter: PillPainter? = null
+    private val card = CardPainter(resources)
     private var corner = 0f
+    private var originalTextPx = 0f
+    private var markLinePx = 0f
     private val overlay = Paint(Paint.ANTI_ALIAS_FLAG)
     private val shine = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val shimmerPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val prismPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val pillPath = Path()
     private var overlayAlpha = 0f
     private var shineX = Float.NaN
+    private var shimmerX = Float.NaN
+    private var prismX = Float.NaN
+    private var reveal = 0f                       // 0 = original look, 1 = card fully shown
+    private var revealDir = Reveal.TOP_DOWN
+    private var glowAlpha = GLOW_REST
     private var overlayAnim: ValueAnimator? = null
     private var shineAnim: ValueAnimator? = null
+    private var shimmerAnim: ValueAnimator? = null
+    private var prismAnim: ValueAnimator? = null
+    private var revealAnim: ValueAnimator? = null
+    private var focusAnim: ValueAnimator? = null
     private var dismissOnly = false
 
     private val gestures = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
@@ -91,6 +143,7 @@ class PillView(context: Context, val block: OcrBlock) : AppCompatTextView(contex
     private fun applyOriginalLayout() {
         val boxes = block.lines.map { it.toBox() }
         val m = lineMetrics(boxes)
+        originalTextPx = m.textPx
         setHorizontallyScrolling(true)                    // never re-wrap: one TextView line per OCR line
         maxLines = Int.MAX_VALUE
         setLineSpacing(0f, 1f)
@@ -100,6 +153,69 @@ class PillView(context: Context, val block: OcrBlock) : AppCompatTextView(contex
         val measured = block.text.split('\n').sumOf { paint.measureText(it).toDouble() }
         val target = boxes.sumOf { it.width }.toDouble()
         textScaleX = if (measured > 0.0) (target / measured).toFloat().coerceIn(0.5f, 2f) else 1f
+        scrollTo(0, 0)
+    }
+
+    /** Spec §3: wrap inside the box; largest size from the original size (≥ 10sp) down to 10sp; truncate below that. */
+    private fun applyTranslatedLayout(text: String) {
+        val lp = layoutParams
+        val innerW = max(1, lp.width - paddingLeft - paddingRight)
+        val innerH = max(1, lp.height - paddingTop - paddingBottom)
+        val minPx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, MIN_SP, resources.displayMetrics)
+        val measure = TextPaint(paint).apply { textScaleX = 1f }
+        fun layout(px: Float): StaticLayout {
+            measure.textSize = px
+            return StaticLayout.Builder.obtain(text, 0, text.length, measure, innerW)
+                .setLineSpacing(0f, TR_SPACING)
+                .setIncludePad(false)
+                .build()
+        }
+        val fit = fitTextSize(max(originalTextPx, minPx), minPx, 1f, innerH) { layout(it).height }
+        setHorizontallyScrolling(false)
+        textScaleX = 1f
+        setLineSpacing(0f, TR_SPACING)
+        setTextSize(TypedValue.COMPLEX_UNIT_PX, fit.textPx)
+        truncated = fit.truncated
+        markLinePx = 0f
+        maxLines = Int.MAX_VALUE
+        if (truncated) {
+            val at10 = layout(minPx)
+            val line = (at10.getLineBottom(0) - at10.getLineTop(0)).toFloat()
+            maxLines = max(1, (innerH / line).toInt())
+            markLinePx = line + PAD_Y_DP * dp
+        }
+        ellipsize = null                                 // custom "⋯" mark instead of the system ellipsis (final pick)
+        scrollTo(0, 0)
+    }
+
+    /**
+     * Shows [text] on a solid card of colour [bg] (spec §3). [reveal]: NONE = at once, TOP_DOWN = tide flip,
+     * LEFT_RIGHT = arrive flip + prism sweep. Starts after [delayMs].
+     */
+    fun showTranslation(text: String, bg: Int, reveal: Reveal, delayMs: Long) {
+        translationText = text
+        showsTranslation = true
+        card.color = bg
+        card.textColor = textColorFor(bg)
+        setText(text)
+        setTextColor(card.textColor)
+        applyTranslatedLayout(text)
+        animateReveal(1f, reveal, delayMs, null)
+        if (reveal == Reveal.LEFT_RIGHT) playPrism(delayMs)
+    }
+
+    /** Back to the transparent original (spec §3 toggle): the card clips away first, then the original layout returns. */
+    fun showOriginal(reveal: Reveal, delayMs: Long) {
+        if (!showsTranslation) return
+        showsTranslation = false
+        animateReveal(0f, reveal, delayMs) {
+            translationText = null
+            truncated = false
+            markLinePx = 0f
+            setText(block.text)
+            setTextColor(Color.TRANSPARENT)
+            applyOriginalLayout()
+        }
     }
 
     /** a2 boxIn: opacity 0 -> 1 and scale .9 -> 1 over 260 ms, cubic-bezier(.2,0,0,1), after [delayMs]. */
@@ -121,6 +237,82 @@ class PillView(context: Context, val block: OcrBlock) : AppCompatTextView(contex
             doOnEnd { shineX = Float.NaN; invalidate() }
             start()
         }
+    }
+
+    /** flip 240 (emphasized) of the clip fraction to [to]; a newer call replaces a running one without its end action. */
+    private fun animateReveal(to: Float, how: Reveal, delayMs: Long, onEnd: (() -> Unit)?) {
+        revealAnim?.let {
+            it.removeAllListeners()
+            it.cancel()
+        }
+        revealAnim = null
+        if (how == Reveal.NONE) {
+            reveal = to
+            invalidate()
+            onEnd?.invoke()
+            return
+        }
+        revealDir = how
+        revealAnim = ValueAnimator.ofFloat(reveal, to).apply {
+            startDelay = delayMs
+            duration = FLIP
+            interpolator = EMPHASIZED
+            addUpdateListener { reveal = it.animatedValue as Float; invalidate() }
+            if (onEnd != null) doOnEnd { onEnd() }
+            start()
+        }
+    }
+
+    /** prism-tide arrive 320: diagonal-ish prism band from -110 % of the band to 160 % of the box. */
+    private fun playPrism(delayMs: Long) {
+        prismAnim?.cancel()
+        prismAnim = ValueAnimator.ofFloat(-1.1f * BAND, 1.6f).apply {
+            startDelay = delayMs
+            duration = ARRIVE
+            interpolator = SHINE_CURVE
+            addUpdateListener { prismX = (it.animatedValue as Float) * width; invalidate() }
+            doOnEnd { prismX = Float.NaN; invalidate() }
+            start()
+        }
+    }
+
+    /** prism-tide shimmer 1200 linear infinite: band from -110 % to 160 % of its own width. */
+    private fun startShimmer() {
+        shimmerAnim?.cancel()
+        shimmerAnim = ValueAnimator.ofFloat(-1.1f, 1.6f).apply {
+            duration = SHIMMER
+            repeatCount = ValueAnimator.INFINITE
+            interpolator = LinearInterpolator()
+            addUpdateListener { shimmerX = (it.animatedValue as Float) * width * BAND; invalidate() }
+            start()
+        }
+    }
+
+    private fun stopShimmer() {
+        shimmerAnim?.cancel()
+        shimmerAnim = null
+        shimmerX = Float.NaN
+        invalidate()
+    }
+
+    /** prism-tide focusGlow: 1200 ms ease-in-out, alternate, infinite. */
+    private fun startFocus() {
+        focusAnim?.cancel()
+        focusAnim = ValueAnimator.ofFloat(GLOW_REST, 1f).apply {
+            duration = FOCUS
+            repeatMode = ValueAnimator.REVERSE
+            repeatCount = ValueAnimator.INFINITE
+            interpolator = EASE_IN_OUT
+            addUpdateListener { glowAlpha = it.animatedValue as Float; invalidate() }
+            start()
+        }
+    }
+
+    private fun stopFocus() {
+        focusAnim?.cancel()
+        focusAnim = null
+        glowAlpha = GLOW_REST
+        invalidate()
     }
 
     private fun press(on: Boolean) {
@@ -174,13 +366,24 @@ class PillView(context: Context, val block: OcrBlock) : AppCompatTextView(contex
         // a2 box: LinearGradient #A78BFA 20% -> #F472B6 16%, glow #A78BFA 28% r12
         painter = PillPainter(withAlpha(0.20f, 0xA78BFA), withAlpha(0.16f, 0xF472B6), withAlpha(0.28f, 0xA78BFA), GLOW_R_DP * dp, corner)
             .also { it.setSize(w, h) }
+        card.setSize(w, h, corner)
         pillPath.reset()
         pillPath.addRoundRect(0f, 0f, fw, fh, corner, corner, Path.Direction.CW)
         overlay.shader = LinearGradient(0f, 0f, fw, 0f, withAlpha(0.28f, 0x7C3AED), withAlpha(0.26f, 0xEC4899), Shader.TileMode.CLAMP)
-        val band = fw * SHINE_BAND
         shine.shader = LinearGradient(
-            0f, 0f, band, 0f,
+            0f, 0f, fw * SHINE_BAND, 0f,
             intArrayOf(withAlpha(0f, 0xFFFFFF), withAlpha(0.9f, 0xFFFFFF), withAlpha(0f, 0xFFFFFF)), null, Shader.TileMode.CLAMP,
+        )
+        val band = fw * BAND
+        shimmerPaint.shader = LinearGradient(
+            0f, 0f, band, 0f,
+            intArrayOf(withAlpha(0f, 0xFFFFFF), withAlpha(0.7f, 0xFFFFFF), withAlpha(0.22f, 0xF472B6), withAlpha(0f, 0xFFFFFF)),
+            floatArrayOf(0f, 0.45f, 0.6f, 1f), Shader.TileMode.CLAMP,
+        )
+        prismPaint.shader = LinearGradient(
+            0f, 0f, band, 0f,
+            intArrayOf(withAlpha(0f, 0xFFFFFF), withAlpha(0.7f, 0xFFFFFF), withAlpha(0.35f, 0xF472B6), withAlpha(0.3f, 0x67E8F9), withAlpha(0f, 0xFFFFFF)),
+            floatArrayOf(0f, 0.35f, 0.55f, 0.7f, 1f), Shader.TileMode.CLAMP,
         )
     }
 
@@ -188,27 +391,61 @@ class PillView(context: Context, val block: OcrBlock) : AppCompatTextView(contex
         val w = width.toFloat()
         val h = height.toFloat()
         val saved = canvas.save()
-        canvas.translate(scrollX.toFloat(), scrollY.toFloat())   // keep the pill fixed while the text scrolls
-        painter?.draw(canvas, alpha = if (selecting) SELECTING else 1f, withGlow = !selecting)   // a2 .box.selecting: fill x.45, no glow
+        canvas.translate(scrollX.toFloat(), scrollY.toFloat())   // keep the box fixed while the text scrolls
+        if (reveal < 1f) {
+            painter?.draw(canvas, alpha = if (selecting) SELECTING else 1f, withGlow = !selecting)   // a2 .box.selecting: fill x.45, no glow
+            if (!shimmerX.isNaN()) sweep(canvas, shimmerPaint, shimmerX, w * BAND)
+        }
+        if (reveal > 0f) {
+            val clip = canvas.save()
+            clipReveal(canvas, w, h, GLOW_CLIP_DP * dp)
+            card.draw(canvas, glowAlpha, markLinePx)
+            canvas.restoreToCount(clip)
+        }
+        if (!prismX.isNaN()) sweep(canvas, prismPaint, prismX, w * BAND)
         if (overlayAlpha > 0f) {
             val layer = canvas.saveLayerAlpha(0f, 0f, w, h, (overlayAlpha.coerceIn(0f, 1f) * 255f).roundToInt())
             canvas.drawRoundRect(0f, 0f, w, h, corner, corner, overlay)
             canvas.restoreToCount(layer)
         }
-        if (!shineX.isNaN()) {
-            val clip = canvas.save()
-            canvas.clipPath(pillPath)
-            canvas.translate(shineX, 0f)
-            canvas.drawRect(0f, 0f, w * SHINE_BAND, h, shine)
-            canvas.restoreToCount(clip)
-        }
+        if (!shineX.isNaN()) sweep(canvas, shine, shineX, w * SHINE_BAND)
         canvas.restoreToCount(saved)
-        super.onDraw(canvas)   // transparent glyphs + selection highlight
+        when {
+            translationText == null || reveal >= 1f -> super.onDraw(canvas)   // glyphs + selection highlight
+            reveal > 0f -> {                                                  // translated text only where the card is
+                val clip = canvas.save()
+                canvas.translate(scrollX.toFloat(), scrollY.toFloat())
+                clipReveal(canvas, w, h, 0f)
+                canvas.translate(-scrollX.toFloat(), -scrollY.toFloat())
+                super.onDraw(canvas)
+                canvas.restoreToCount(clip)
+            }
+        }
+    }
+
+    /** Clips to the revealed part of the card ([pad] lets the glow outside the box through); no clip at 1. */
+    private fun clipReveal(canvas: Canvas, w: Float, h: Float, pad: Float) {
+        if (reveal >= 1f) return
+        if (revealDir == Reveal.LEFT_RIGHT) canvas.clipRect(-pad, -pad, w * reveal, h + pad)
+        else canvas.clipRect(-pad, -pad, w + pad, h * reveal)
+    }
+
+    /** A horizontal band of [paint] (shader spans 0..[band]) at [x], clipped to the box outline. */
+    private fun sweep(canvas: Canvas, paint: Paint, x: Float, band: Float) {
+        val clip = canvas.save()
+        canvas.clipPath(pillPath)
+        canvas.translate(x, 0f)
+        canvas.drawRect(0f, 0f, band, height.toFloat(), paint)
+        canvas.restoreToCount(clip)
     }
 
     override fun onDetachedFromWindow() {
         overlayAnim?.cancel()
         shineAnim?.cancel()
+        shimmerAnim?.cancel()
+        prismAnim?.cancel()
+        revealAnim?.cancel()
+        focusAnim?.cancel()
         super.onDetachedFromWindow()
     }
 
@@ -217,14 +454,24 @@ class PillView(context: Context, val block: OcrBlock) : AppCompatTextView(contex
         const val PAD_Y_DP = 3f
         private const val CORNER_DP = 12f
         private const val GLOW_R_DP = 12f
+        private const val GLOW_CLIP_DP = 32f       // > card glow pad (blur 14dp + dy 4dp)
+        private const val MIN_SP = 10f             // spec §3 minimum translation size
+        private const val TR_SPACING = 1.1f        // ≈ mockup line-height 1.28 over the default font line height
+        private const val BAND = 0.7f              // shimmer / prism band = 70 % of the box
+        private const val GLOW_REST = 0.6f         // × 70 % lavender = 42 %
         private const val BOX_IN = 260L
         private const val FLASH = 380L
+        private const val FLIP = 240L
+        private const val ARRIVE = 320L
+        private const val SHIMMER = 1200L
+        private const val FOCUS = 1200L
         private const val PRESS_FADE = 140L
         private const val SHINE_BAND = 0.48f
         private const val SELECTING = 0.45f
-        private val EMPHASIZED = PathInterpolator(0.2f, 0f, 0f, 1f)      // a2 boxIn
+        private val EMPHASIZED = PathInterpolator(0.2f, 0f, 0f, 1f)      // a2 boxIn, prism-tide flip
         private val CSS_EASE = PathInterpolator(0.25f, 0.1f, 0.25f, 1f)  // CSS "ease" (pressing overlay)
         private val EASE_OUT = PathInterpolator(0f, 0f, 0.58f, 1f)       // CSS "ease-out" (copied flash)
-        private val SHINE_CURVE = PathInterpolator(0.4f, 0f, 0.2f, 1f)   // a2 shine
+        private val EASE_IN_OUT = PathInterpolator(0.42f, 0f, 0.58f, 1f) // CSS "ease-in-out" (focus glow)
+        private val SHINE_CURVE = PathInterpolator(0.4f, 0f, 0.2f, 1f)   // a2 shine, prism-tide arrive
     }
 }
