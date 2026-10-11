@@ -12,6 +12,7 @@ data class Sampler(val topK: Int, val topP: Double, val temperature: Double)
  * One downloadable `.litertlm` model. [revision] + exact [size] pin the file: a resumed download can never mix two
  * versions (any other size is rejected). [key] is what Prefs stores; [title]/[badge]/[glyph] are the Settings row.
  * [context] = chat-template variables passed with every message (e.g. enable_thinking=false).
+ * [fp32Activations] = run the GPU with fp32 activations (the runtime default is fp16, which garbles some models).
  */
 class ModelSpec(
     val key: String,
@@ -27,6 +28,7 @@ class ModelSpec(
     val prompt: (String, TargetLang) -> String?,
     val clean: (String) -> String?,
     val supports: (String) -> Boolean,
+    val fp32Activations: Boolean = false,
 ) {
     val url: String get() = "https://huggingface.co/$repo/resolve/$revision/$file"
 }
@@ -60,6 +62,7 @@ val MODELS: List<ModelSpec> = listOf(
         sampler = Sampler(topK = 10, topP = 0.95, temperature = 0.3),
         context = CHAT_CONTEXT,
         prompt = ChatRules::prompt, clean = ChatRules::clean, supports = { true },
+        fp32Activations = true,   // Qwen3.5 hybrid graph prints "!!!!" with fp16 GPU activations (docs/logs/2026-10-11/qwen-gpu-debug.md)
     ),
 )
 
