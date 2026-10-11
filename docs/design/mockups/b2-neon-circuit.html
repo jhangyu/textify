@@ -1,0 +1,396 @@
+<!doctype html>
+<!--
+  Textify capture-session mockup B2 - "Neon Circuit"
+  Cyber/tech HUD: two neon comets (cyan + magenta) chase around the edge, a scan band sweeps the scrim, line boxes are bottom-lit scan strips that wipe in.
+
+  PALETTE
+    cyan      #22E1FF
+    magenta   #FF3D9A
+    violet    #7A5CFF
+    ink       #0A1428
+    deep      #050914
+    scrim     #030814
+    text      #D8F6FF
+
+  TIMINGS (ms) - every fade/transition is <= 400 ms. Values below that are NOT fades:
+    ocrHold   = scrim hold while OCR runs (simulated; 700/1200/3000 selectable in the panel),
+    toastHold = time the toast stays fully visible, longPress = gesture threshold,
+    spinOcr/spinRest/pulse/scan = loop periods of ambient glow animations (0 = static / not used).
+    bubbleOut     180 ms
+    shutter       140 ms
+    glowIn        320 ms
+    scrimIn       260 ms
+    ocrHold      1200 ms
+    scrimOut      300 ms
+    glowSettle    400 ms
+    boxFade       220 ms
+    boxStagger    180 ms
+    xIn           260 ms
+    hintIn        300 ms
+    pressScale    120 ms
+    longPress     450 ms
+    selIn         160 ms
+    menuIn        180 ms
+    copyFlash     360 ms
+    toastIn       220 ms
+    toastHold    1400 ms
+    toastOut      200 ms
+    closeOut      320 ms
+    bubbleIn      260 ms
+    targetIn      200 ms
+    targetOut     180 ms
+    snap          160 ms
+    edgeSnap      300 ms
+    dismissOut    260 ms
+    spinOcr      1600 ms
+    spinRest        0 ms
+    scan         1300 ms
+    Box stagger: box i starts at round(i/(n-1) * boxStagger); boxFade + boxStagger = 400 ms total (<= 400).
+    Easing: --ease in the theme CSS (PathInterpolator); bubble edge-snap uses cubic-bezier(.34,1.56,.64,1) (OvershootInterpolator ~1.5).
+
+  SEQUENCE
+    tap bubble -> bubble fades out (bubbleOut) -> frozen screenshot shown + shutter blink (shutter)
+    -> edge glow fades in (glowIn) + faint scrim fades in (scrimIn) -> hold (ocrHold)
+    -> scrim fades out (scrimOut), glow settles into the faint residual edge (glowSettle)
+    -> line boxes fade in with stagger (boxFade, boxStagger) + X fades in (xIn).
+    Close (X / Esc = system back): everything fades (closeOut), bubble fades back in (bubbleIn).
+
+  NATIVE NOTES (Android Views/Canvas, minSdk 26)
+    - Comets: rounded-rect stroke with SweepGradient whose stops are mostly transparent + two bright heads; rotate via shader local matrix (1600ms/turn while OCR runs).
+    - Scan band: a 140dp tall LinearGradient (transparent->cyan 14%->transparent) drawn with translateY animated top->bottom, repeat 1300ms; only during OCR wait.
+    - Residual: comets fade out (400ms) while a static SweepGradient cyan->violet ring fades to alpha 0.28 (no rotation = zero idle cost).
+    - Line box: vertical LinearGradient cyan 4%->17% + blurred bottom glow; reveal = clipRect width animated 0->100% together with alpha.
+    - Glow blur: BlurMaskFilter (API 28+ HW) / RenderEffect (31+); fallback for 26-27: draw 3 concentric strokes with decreasing alpha (looks near-identical at 24dp).
+    - No solid outline strokes: boxes are fills only; the screen edge is a blurred gradient band.
+-->
+<html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Textify - Neon Circuit (B2)</title>
+<style>
+@property --a{syntax:'<angle>';inherits:true;initial-value:0deg}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:radial-gradient(1200px 700px at 30% 20%,color-mix(in srgb,var(--accent) 10%,transparent),transparent 60%),var(--page);color:var(--panel-fg);font:14px/1.45 ui-sans-serif,system-ui,-apple-system,"Segoe UI","PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;display:flex;align-items:center;justify-content:center;gap:40px;padding:24px;flex-wrap:wrap;min-height:100vh}
+.device{width:432px;height:935px;padding:10px;border-radius:52px;background:linear-gradient(160deg,#2a2a30,#0d0d10);box-shadow:0 40px 90px rgba(0,0,0,.55),inset 0 0 0 2px rgba(255,255,255,.06);flex:none}
+.screen{position:relative;width:412px;height:915px;border-radius:42px;overflow:hidden;background:#fff;user-select:none;-webkit-user-select:none;touch-action:none}
+#app{position:absolute;inset:0;background:#EFF2F6;color:#161A22;font-family:system-ui,-apple-system,"Segoe UI",Roboto,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif}
+.status{height:44px;display:flex;align-items:center;justify-content:space-between;padding:6px 28px 0;font-size:14px;font-weight:600;background:#fff}
+.status .r{display:flex;gap:6px;align-items:center;font-size:12.5px}
+.hdr{height:64px;background:#fff;display:flex;align-items:center;gap:12px;padding:0 16px;box-shadow:0 1px 0 rgba(0,0,0,.05)}
+.av{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:700;font-size:15px;flex:none}
+.hdr .ttl{font-weight:650;font-size:16.5px}.hdr .st{font-size:12.5px;color:#5B6472}
+.msgs{padding:14px 14px 0;display:flex;flex-direction:column;gap:9px}
+.row{display:flex;gap:8px;align-items:flex-end}.row.me{justify-content:flex-end}
+.row .av{width:30px;height:30px;font-size:12px}
+.b{max-width:262px;padding:9px 13px;border-radius:18px;font-size:15px;line-height:1.42;background:#fff;box-shadow:0 1px 1px rgba(0,0,0,.04)}
+.row.me .b{background:#3B6EF6;color:#fff;border-bottom-right-radius:6px}
+.row:not(.me) .b{border-bottom-left-radius:6px}
+.who{font-size:12px;color:#7A8291;margin:0 0 2px 40px}
+.chip{align-self:center;font-size:12px;color:#5B6472;background:#E2E6EC;padding:3px 10px;border-radius:999px;margin:4px 0}
+.card{width:262px;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 1px 1px rgba(0,0,0,.04)}
+.card .img{height:96px;background:linear-gradient(135deg,#C9D6FF,#E2E2E2 60%,#FCE1EC)}
+.card .tx{padding:9px 13px 11px}.card .h{font-weight:650;font-size:14.5px}.card .u{font-size:12.5px;color:#7A8291}
+.tm{font-size:11px;color:#8A93A2;margin:0 2px 2px}
+.typing{display:flex;gap:4px;padding:12px 14px}.typing i{width:7px;height:7px;border-radius:50%;background:#A3ABB8;animation:dot 1.2s infinite}
+.typing i:nth-child(2){animation-delay:.15s}.typing i:nth-child(3){animation-delay:.3s}
+@keyframes dot{0%,60%,100%{transform:none;opacity:.5}30%{transform:translateY(-4px);opacity:1}}
+#app.frozen *{animation-play-state:paused!important}
+.inbar{position:absolute;left:0;right:0;bottom:0;height:96px;background:#fff;display:flex;gap:10px;align-items:flex-start;padding:12px 14px}
+.inbar .in{flex:1;height:42px;border-radius:21px;background:#EFF2F6;display:flex;align-items:center;padding:0 16px;color:#8A93A2;font-size:15px}
+.inbar .send{width:42px;height:42px;border-radius:50%;background:#3B6EF6;display:grid;place-items:center;color:#fff}
+.gest{position:absolute;bottom:8px;left:50%;width:120px;height:4px;margin-left:-60px;border-radius:2px;background:#161A22;opacity:.85}
+#ov{position:absolute;inset:0;pointer-events:none;opacity:1;transition:opacity var(--t-closeOut) var(--ease)}
+#ov.on{pointer-events:auto}#ov.closing{opacity:0}
+#ov > *{position:absolute}
+#shutter,#scrim{inset:0;opacity:0;pointer-events:none}
+#shutter{transition:opacity var(--t-shutter) ease-out}
+#scrim{transition:opacity var(--t-scrimIn) var(--ease)}
+#ov.done #scrim{transition-duration:var(--t-scrimOut)}
+#scan{display:none;left:0;right:0;top:0;opacity:0;pointer-events:none;transition:opacity var(--t-scrimOut)}
+#edge{inset:0;pointer-events:none;animation:spinA var(--spin,1ms) linear infinite;animation-play-state:var(--spin-state,paused)}
+@keyframes spinA{from{--a:var(--a0,0deg)}to{--a:calc(var(--a0,0deg) + 360deg)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+.ring{position:absolute;inset:0;opacity:0;transition:opacity var(--t-glowIn) var(--ease)}
+.ring::before{content:'';position:absolute;inset:0;border-radius:42px;padding:var(--w);background:var(--bg,var(--grad));
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;
+  transition:padding var(--t-glowSettle) var(--ease)}
+#ov.done .ring{transition-duration:var(--t-glowSettle)}
+#boxes{inset:0}
+.box{position:absolute;opacity:0;cursor:pointer;transition:opacity var(--t-boxFade) var(--ease),transform var(--t-boxFade) var(--ease),background var(--t-pressScale) ease}
+.box.in{opacity:1}
+.box::after{content:'';position:absolute;inset:0;border-radius:inherit;opacity:0;pointer-events:none}
+.box.flash::after{animation:flash var(--t-copyFlash) ease-out}
+#sel{inset:0;pointer-events:none}
+#selhl{opacity:0;pointer-events:none;transition:opacity var(--t-selIn)}
+#sel.on #selhl{opacity:1}
+.handle{width:22px;height:22px;opacity:0;transform:scale(.4);transition:opacity var(--t-selIn) var(--ease),transform var(--t-selIn) var(--ease);cursor:grab;touch-action:none;pointer-events:none}
+.handle.l{border-radius:50% 0 50% 50%}.handle.r{border-radius:0 50% 50% 50%}
+#sel.on .handle{opacity:1;transform:none;pointer-events:auto}
+#menu{display:flex;padding:4px;opacity:0;transform:translateY(6px) scale(.96);transition:opacity var(--t-menuIn) var(--ease),transform var(--t-menuIn) var(--ease);pointer-events:none;white-space:nowrap}
+#menu.on{opacity:1;transform:none;pointer-events:auto}
+#menu button{background:none;border:0;font:inherit;font-weight:600;padding:8px 14px;cursor:pointer;border-radius:inherit}
+#toast{left:50%;bottom:118px;display:flex;align-items:center;gap:10px;opacity:0;transform:translate(-50%,14px);transition:opacity var(--t-toastOut) var(--ease),transform var(--t-toastOut) var(--ease);pointer-events:none;max-width:340px;white-space:nowrap}
+#toast.show{opacity:1;transform:translate(-50%,0);transition-duration:var(--t-toastIn)}
+#toast .main{font-weight:650}#toast .sub{font-size:12.5px;overflow:hidden;text-overflow:ellipsis;max-width:220px}
+#close{top:54px;right:16px;border:0;display:grid;place-items:center;cursor:pointer;opacity:0;transform:scale(.7);transition:opacity var(--t-xIn) var(--ease),transform var(--t-xIn) var(--ease);pointer-events:none}
+#ov.done #close{opacity:1;transform:none;pointer-events:auto}
+#nohint{left:50%;top:50%;display:flex;align-items:center;gap:10px;padding:12px 18px 12px 12px;font-weight:600;opacity:0;transform:translate(-50%,-50%) scale(.94);transition:opacity var(--t-hintIn) var(--ease),transform var(--t-hintIn) var(--ease);pointer-events:none}
+#nohint.on{opacity:1;transform:translate(-50%,-50%)}
+#nohint .ico{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-weight:800}
+#bubble{position:absolute;width:56px;height:56px;left:0;top:0;cursor:pointer;touch-action:none;z-index:5;transition:opacity var(--t-bubbleIn) var(--ease),scale var(--t-bubbleIn) var(--ease)}
+#bubble.hide{opacity:0;scale:.6;pointer-events:none;transition-duration:var(--t-bubbleOut)}
+#bubble.anim{transition:opacity var(--t-bubbleIn),scale var(--t-bubbleIn),left var(--t-edgeSnap) cubic-bezier(.34,1.56,.64,1),top var(--t-edgeSnap) cubic-bezier(.34,1.56,.64,1)}
+#bubble.snapping{transition:left var(--t-snap) ease-out,top var(--t-snap) ease-out,opacity var(--t-dismissOut),scale var(--t-dismissOut)}
+#bubble.gone{opacity:0;scale:.2;pointer-events:none}
+#bubble .disc{width:100%;height:100%;border-radius:50%;display:grid;place-items:center;transition:transform var(--t-pressScale)}
+#bubble.down .disc{transform:scale(.92)}
+#shade{position:absolute;left:0;right:0;bottom:0;height:260px;opacity:0;pointer-events:none;transition:opacity var(--t-targetIn);z-index:4}
+#shade.on{opacity:1}
+#target{position:absolute;left:174px;bottom:78px;width:64px;height:64px;opacity:0;transform:translateY(24px) scale(.8);transition:opacity var(--t-targetOut) var(--ease),transform var(--t-targetOut) var(--ease);pointer-events:none;z-index:4}
+#target.on{opacity:1;transform:none;transition-duration:var(--t-targetIn)}
+#target.on.hot{transform:scale(1.18)}
+#target .disc{width:100%;height:100%;border-radius:50%;display:grid;place-items:center;transition:background var(--t-snap),box-shadow var(--t-snap),color var(--t-snap)}
+.panel{width:300px;background:var(--panel);border-radius:22px;padding:22px;display:flex;flex-direction:column;gap:14px;box-shadow:0 20px 50px rgba(0,0,0,.35)}
+.panel h1{font-size:20px;letter-spacing:-.01em}.panel .tag{color:var(--panel-mute);font-size:12.5px}
+.panel .k{font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--panel-mute)}
+.panel button.big{border:0;border-radius:14px;padding:12px;font:inherit;font-weight:700;background:var(--accent);color:#0A0A0A;cursor:pointer;transition:transform 120ms}
+.panel button.big:active{transform:scale(.97)}
+.panel label{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13.5px;cursor:pointer}
+.panel select{color:var(--panel-fg);border:0;font:inherit;background:color-mix(in srgb,var(--panel-fg) 8%,transparent);border-radius:8px;padding:4px 8px}
+.panel select option{color:#000}
+.panel input[type=checkbox]{accent-color:var(--accent);width:18px;height:18px}
+.panel ul{list-style:none;font-size:12.5px;color:var(--panel-mute);display:flex;flex-direction:column;gap:5px}
+.panel ul b{color:var(--panel-fg);font-weight:600}
+#state{font:12px ui-monospace,Menlo,monospace;color:var(--accent)}
+@media (prefers-reduced-motion:reduce){*{animation-duration:1ms!important;animation-iteration-count:1!important}}
+
+:root{--accent:#22E1FF;--page:#03060E;--panel:#0A1428;--panel-fg:#D8F6FF;--panel-mute:#6C8AA6;--ease:cubic-bezier(.16,1,.3,1)}
+#edge{--grad:conic-gradient(from var(--a),transparent 0%,rgba(34,225,255,0) 18%,#22E1FF 44%,#F0FEFF 49.3%,transparent 49.8%,rgba(255,61,154,0) 68%,#FF3D9A 94%,#FFE4F1 99.3%,transparent 99.8%)}
+.ring.halo{--w:24px;filter:blur(14px)}
+.ring.core{--w:3px;filter:blur(1px)}
+.ring.rest{--w:10px;filter:blur(8px);--bg:conic-gradient(from 210deg,#22E1FF,#7A5CFF,#22E1FF,#7A5CFF,#22E1FF)}
+#ov.ocr .ring.halo{opacity:1}
+#ov.ocr .ring.core{opacity:1}
+#ov.done .ring.rest{opacity:.28}
+#scrim{background:#030814}#ov.ocr #scrim{opacity:.26}
+#scan{display:block;height:140px;background:linear-gradient(180deg,rgba(34,225,255,0),rgba(34,225,255,.14) 70%,rgba(240,254,255,.22) 100%)}
+#ov.ocr #scan{opacity:1;animation:scan var(--t-scan) linear infinite}
+@keyframes scan{from{transform:translateY(-140px)}to{transform:translateY(915px)}}
+#shutter{background:#22E1FF}#ov.shot #shutter{opacity:.16}
+.box{border-radius:3px;background:linear-gradient(180deg,rgba(34,225,255,.04),rgba(34,225,255,.17));box-shadow:0 7px 12px -9px rgba(34,225,255,.75);clip-path:inset(0 100% 0 0);transition:opacity var(--t-boxFade) var(--ease),clip-path var(--t-boxFade) var(--ease),transform var(--t-pressScale) ease}
+.box.in{clip-path:inset(0 0 0 0)}
+.box.press{transform:scale(.98);background:linear-gradient(180deg,rgba(34,225,255,.10),rgba(34,225,255,.30))}
+.box::after{background:linear-gradient(180deg,rgba(255,61,154,.15),rgba(255,61,154,.6))}
+@keyframes flash{0%{opacity:0}20%{opacity:1}100%{opacity:0}}
+#selhl{background:rgba(255,61,154,.30);border-radius:2px}
+.handle{background:#FF3D9A;box-shadow:0 0 12px rgba(255,61,154,.8)}
+#menu{background:#0A1428;color:#22E1FF;border-radius:8px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;letter-spacing:.08em;text-transform:uppercase;box-shadow:0 0 20px rgba(34,225,255,.35)}
+#menu button{color:#22E1FF}#menu button+button{color:#FF3D9A}
+#toast{background:#0A1428;color:#D8F6FF;border-radius:6px;padding:10px 16px 10px 12px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;box-shadow:0 0 24px rgba(34,225,255,.4)}
+#toast .ico{color:#22E1FF;font-weight:700}
+#toast .ico::before{content:'>'}#toast .ico svg{display:none}
+#toast .main{text-transform:uppercase;letter-spacing:.1em;color:#22E1FF}
+#toast .sub{color:#6C8AA6}
+#toast.show .main{animation:type var(--t-toastIn) steps(6) both}
+@keyframes type{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
+#close{width:38px;height:38px;border-radius:10px;background:rgba(10,20,40,.9);color:#22E1FF;box-shadow:0 0 16px rgba(34,225,255,.55)}
+#close:active{transform:scale(.88)}
+#nohint{background:#0A1428;color:#D8F6FF;border-radius:8px;font-family:ui-monospace,Menlo,Consolas,monospace;box-shadow:0 0 26px rgba(34,225,255,.35)}
+#nohint .ico{background:transparent;color:#FF3D9A;box-shadow:0 0 14px rgba(255,61,154,.6)}
+#bubble .disc{background:#0A1428;color:#22E1FF;animation:ping 2200ms ease-out infinite}
+@keyframes ping{0%{box-shadow:0 0 0 0 rgba(34,225,255,.55),0 6px 18px rgba(3,8,20,.5)}70%,100%{box-shadow:0 0 0 14px rgba(34,225,255,0),0 6px 18px rgba(3,8,20,.5)}}
+#target .disc{border-radius:20px;background:rgba(10,20,40,.92);color:#FF3D9A;box-shadow:0 0 14px rgba(255,61,154,.35)}
+#target.hot .disc{background:#FF3D9A;color:#0A1428;box-shadow:0 0 34px rgba(255,61,154,.85)}
+#shade{background:linear-gradient(to top,rgba(3,8,20,.6),rgba(3,8,20,0))}
+</style></head>
+<body>
+<div class="device"><div class="screen">
+<div id="app">
+  <div class="status"><span class="t">9:41</span><span class="r"><svg width="16" height="12" viewBox="0 0 16 12"><path d="M1 11h2V8H1zm4 0h2V6H5zm4 0h2V3H9zm4 0h2V0h-2z" fill="#161A22"/></svg><span class="t">87%</span></span></div>
+  <div class="hdr">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#161A22" stroke-width="2.2" stroke-linecap="round"><path d="M15 5l-7 7 7 7"/></svg>
+    <div class="av" style="background:linear-gradient(135deg,#FF8A5B,#F2546B)">設</div>
+    <div><div class="ttl t">設計小組 Design Crew</div><div class="st t">Mina、Leo、你 · 3 online</div></div>
+  </div>
+  <div class="msgs">
+    <div class="who t">Mina</div>
+    <div class="row"><div class="av" style="background:#8E6BF0">M</div><div class="b t">明天的 demo 改到下午 3 點，記得帶 Pixel 測試機。</div></div>
+    <div class="row"><div class="av" style="background:#8E6BF0;opacity:0">M</div><div class="b t">Also the build link: textify.app/b/2817</div></div>
+    <div class="row me"><span class="tm t">13:58</span><div class="b t">收到！I'll bring the Pixel 9 and the charger.</div></div>
+    <div class="chip t">今天 14:02</div>
+    <div class="who t">Leo</div>
+    <div class="row"><div class="av" style="background:#14A889">L</div><div class="b t">新版 OCR 對中英混排的準確率提升到 97.3%，超讚！</div></div>
+    <div class="row"><div class="av" style="background:#14A889;opacity:0">L</div><div class="card"><div class="img"></div><div class="tx"><div class="h t">Textify — Copy any text on screen</div><div class="u t">textify.app · 2 min read</div></div></div></div>
+    <div class="row me"><div class="b t">那今晚把 release notes 整理好，週五 merge。</div></div>
+    <div class="row"><div class="av" style="background:#14A889">L</div><div class="b typing"><i></i><i></i><i></i></div></div>
+  </div>
+  <div class="inbar"><div class="in t">輸入訊息…</div><div class="send"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M3 20l18-8L3 4v6l12 2-12 2z"/></svg></div><div class="gest"></div></div>
+</div>
+<div id="ov" aria-live="polite">
+  <div id="shutter"></div>
+  <div id="scrim"></div>
+  <div id="scan"></div>
+  <div id="edge"><div class="ring rest"></div><div class="ring halo"></div><div class="ring core"></div></div>
+  <div id="boxes"></div>
+  <div id="sel"><div id="selhl" style="position:absolute"></div><div class="handle l" style="position:absolute"></div><div class="handle r" style="position:absolute"></div></div>
+  <div id="menu"><button data-act="copy">Copy</button><button data-act="all">Select all</button></div>
+  <div id="nohint"><span class="ico">T</span><span>No text detected</span></div>
+  <div id="toast"><span class="ico"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span><span class="main">Copied</span><span class="sub"></span></div>
+  <button id="close" aria-label="Close capture session"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+</div>
+<div id="shade"></div>
+<div id="target"><div class="disc"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></div></div>
+<div id="bubble" role="button" aria-label="Textify bubble"><div class="disc"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16"/><path d="M8.5 9h7M12 9v7"/></svg></div></div></div></div>
+<aside class="panel">
+  <div><div class="k">Textify · capture session · B2</div><h1>Neon Circuit</h1><div class="tag">Cyber/tech HUD: two neon comets (cyan + magenta) chase around the edge, a scan band sweeps the scrim, line boxes are bottom-lit scan strips that wipe in.</div></div>
+  <button class="big" id="replay">Replay</button>
+  <label>OCR wait <select id="hold"><option value="700">0.7 s</option><option value="1200" selected>1.2 s</option><option value="3000">3 s</option></select></label>
+  <label>Preview “no text detected” <input type="checkbox" id="notext"></label>
+  <div id="state"></div>
+  <ul>
+    <li><b>Tap bubble</b> - capture &amp; recognise</li>
+    <li><b>Tap a line</b> - copy whole line</li>
+    <li><b>Long-press a line</b> - partial select, drag handles</li>
+    <li><b>X</b> or <b>Esc</b> (system back) - close</li>
+    <li><b>Drag bubble</b> to the bottom target - stop service</li>
+    <li>Tapping empty space does not close</li>
+  </ul>
+</aside>
+<script>const T={"bubbleOut":180,"shutter":140,"glowIn":320,"scrimIn":260,"ocrHold":1200,"scrimOut":300,"glowSettle":400,"boxFade":220,"boxStagger":180,"xIn":260,"hintIn":300,"pressScale":120,"longPress":450,"selIn":160,"menuIn":180,"copyFlash":360,"toastIn":220,"toastHold":1400,"toastOut":200,"closeOut":320,"bubbleIn":260,"targetIn":200,"targetOut":180,"snap":160,"edgeSnap":300,"dismissOut":260,"spinOcr":1600,"spinRest":0,"scan":1300};
+const $=s=>document.querySelector(s);
+const screen=$('.screen'),app=$('#app'),ov=$('#ov'),edge=$('#edge'),boxesEl=$('#boxes'),bubble=$('#bubble'),target=$('#target'),shade=$('#shade');
+const toast=$('#toast'),menu=$('#menu'),sel=$('#sel'),selhl=$('#selhl'),hL=$('.handle.l'),hR=$('.handle.r'),closeBtn=$('#close'),nohint=$('#nohint'),stateEl=$('#state');
+for(const [k,v] of Object.entries(T)) document.documentElement.style.setProperty('--t-'+k,v+'ms');
+const W=412,H=915,BS=56,M=8;
+let state='idle',run=0,lines=[],selState=null,toastTimer=0;
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+const setState=s=>{state=s;stateEl.textContent='state: '+s};
+const k=()=>screen.getBoundingClientRect().width/W;
+const local=e=>{const r=screen.getBoundingClientRect(),s=k();return{x:(e.clientX-r.left)/s,y:(e.clientY-r.top)/s}};
+
+/* OCR simulation: one box per rendered text LINE, measured from the DOM (stand-in for ML Kit Text.Line boundingBox) */
+function extractLines(){
+  const r=screen.getBoundingClientRect(),s=k(),rg=document.createRange(),out=[];
+  app.querySelectorAll('.t').forEach(el=>{
+    const tw=document.createTreeWalker(el,NodeFilter.SHOW_TEXT);let n,cur=null;
+    while((n=tw.nextNode())){for(let i=0;i<n.length;i++){
+      rg.setStart(n,i);rg.setEnd(n,i+1);const b=rg.getClientRects()[0];if(!b||b.width===0)continue;
+      const c={ch:n.data[i],l:(b.left-r.left)/s,r:(b.right-r.left)/s,t:(b.top-r.top)/s,b:(b.bottom-r.top)/s};
+      const cy=(c.t+c.b)/2;
+      if(!cur||Math.abs(cy-cur.cy)>(c.b-c.t)*.5){cur={cy,chars:[]};out.push(cur)}
+      cur.chars.push(c);
+    }}
+  });
+  return out.map(L=>{const ch=L.chars;while(ch.length&&!ch[0].ch.trim())ch.shift();while(ch.length&&!ch[ch.length-1].ch.trim())ch.pop();
+    return ch.length?{chars:ch,text:ch.map(c=>c.ch).join(''),l:Math.min(...ch.map(c=>c.l)),r:Math.max(...ch.map(c=>c.r)),t:Math.min(...ch.map(c=>c.t)),b:Math.max(...ch.map(c=>c.b))}:null}).filter(Boolean);
+}
+
+/* edge glow rotation: keep the current angle when the speed changes */
+function setSpin(ms){
+  const a=parseFloat(getComputedStyle(edge).getPropertyValue('--a'))||0;
+  edge.style.animation='none';edge.offsetWidth;edge.style.animation='';
+  edge.style.setProperty('--a0',a+'deg');
+  edge.style.setProperty('--spin',(ms||1)+'ms');
+  edge.style.setProperty('--spin-state',ms?'running':'paused');
+}
+
+/* bubble: tap = capture, drag = move, drop on bottom target = stop service */
+let bx=W-BS-M,by=380,drag=null;
+function placeBubble(){bubble.style.left=bx+'px';bubble.style.top=by+'px'}
+placeBubble();
+bubble.addEventListener('pointerdown',e=>{if(state!=='idle')return;bubble.setPointerCapture(e.pointerId);const p=local(e);drag={sx:p.x,sy:p.y,ox:bx,oy:by,moved:false,hot:false};bubble.classList.add('down');bubble.classList.remove('anim','snapping')});
+bubble.addEventListener('pointermove',e=>{if(!drag)return;const p=local(e),dx=p.x-drag.sx,dy=p.y-drag.sy;
+  if(!drag.moved&&Math.hypot(dx,dy)>6){drag.moved=true;target.classList.add('on');shade.classList.add('on')}
+  if(!drag.moved)return;
+  const tx=W/2-BS/2,ty=H-78-32-BS/2,nx=drag.ox+dx,ny=drag.oy+dy,near=Math.hypot(nx-tx,ny-ty)<90;
+  if(near!==drag.hot){drag.hot=near;target.classList.toggle('hot',near);bubble.classList.add('snapping');try{navigator.vibrate&&navigator.vibrate(12)}catch(_){}}
+  else if(!near)bubble.classList.remove('snapping');
+  if(near){bx=tx;by=ty}else{bx=nx;by=ny}placeBubble();
+});
+bubble.addEventListener('pointerup',async()=>{if(!drag)return;const d=drag;drag=null;bubble.classList.remove('down');
+  if(!d.moved){capture();return}
+  if(d.hot){setState('stopped');bubble.classList.add('snapping','gone');await wait(T.dismissOut);target.classList.remove('on','hot');shade.classList.remove('on');
+    stateEl.textContent='state: service stopped (bubble dismissed) - press Replay';return}
+  target.classList.remove('on','hot');shade.classList.remove('on');
+  bubble.classList.remove('snapping');bubble.classList.add('anim');bx=(bx+BS/2<W/2)?M:W-BS-M;by=Math.max(60,Math.min(H-170,by));placeBubble();
+});
+
+/* capture session */
+async function capture(){
+  if(state!=='idle')return;const my=++run;setState('capturing');
+  bubble.classList.add('hide');await wait(T.bubbleOut);if(my!==run)return;
+  app.classList.add('frozen');ov.classList.add('on','shot');setTimeout(()=>ov.classList.remove('shot'),T.shutter);
+  setSpin(T.spinOcr);ov.classList.add('ocr');setState('recognising (scrim hold)');
+  lines=$('#notext').checked?[]:extractLines();
+  await wait(T.glowIn+Number($('#hold').value));if(my!==run)return;
+  setSpin(T.spinRest);ov.classList.remove('ocr');ov.classList.add('done');
+  if(!lines.length){nohint.classList.add('on');setState('session (no text)');return}
+  const n=lines.length;
+  lines.forEach((L,i)=>{const b=document.createElement('div');b.className='box';b.dataset.i=i;
+    Object.assign(b.style,{left:(L.l-4)+'px',top:(L.t-2)+'px',width:(L.r-L.l+8)+'px',height:(L.b-L.t+4)+'px',transitionDelay:Math.round(i/Math.max(1,n-1)*T.boxStagger)+'ms'});
+    boxesEl.appendChild(b);L.el=b;});
+  boxesEl.offsetWidth;boxesEl.querySelectorAll('.box').forEach(b=>b.classList.add('in'));
+  setTimeout(()=>boxesEl.querySelectorAll('.box').forEach(b=>b.style.transitionDelay=''),T.boxFade+T.boxStagger);
+  setState('session');
+}
+async function closeSession(){
+  if(!state.startsWith('session'))return;const my=++run;setState('closing');clearSel();
+  ov.classList.add('closing');await wait(T.closeOut);if(my!==run)return;
+  resetOverlay();bubble.classList.remove('hide');setState('idle');
+}
+function resetOverlay(){ov.className='';boxesEl.innerHTML='';nohint.classList.remove('on');toast.classList.remove('show');clearSel();app.classList.remove('frozen');setSpin(0);lines=[]}
+closeBtn.addEventListener('click',closeSession);
+addEventListener('keydown',e=>{if(e.key==='Escape'||e.key==='Backspace')closeSession()});
+
+/* copy: flash the box + toast */
+function copy(L,text){
+  try{navigator.clipboard&&navigator.clipboard.writeText(text).catch(()=>{})}catch(_){}
+  L.el.classList.remove('flash');L.el.offsetWidth;L.el.classList.add('flash');
+  toast.querySelector('.sub').textContent=text.length>24?text.slice(0,23)+'…':text;
+  toast.classList.remove('show');toast.offsetWidth;toast.classList.add('show');
+  clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.classList.remove('show'),T.toastIn+T.toastHold);
+}
+
+/* tap / long-press on a line box */
+let press=null;
+boxesEl.addEventListener('pointerdown',e=>{const b=e.target.closest('.box');if(!b)return;e.stopPropagation();
+  if(selState){clearSel();return}
+  const p=local(e);b.classList.add('press');
+  press={b,p,timer:setTimeout(()=>{b.classList.remove('press');startSel(+b.dataset.i,p.x);press=null},T.longPress)};
+});
+addEventListener('pointermove',e=>{if(press){const p=local(e);if(Math.hypot(p.x-press.p.x,p.y-press.p.y)>10){clearTimeout(press.timer);press.b.classList.remove('press');press=null}}});
+addEventListener('pointerup',()=>{if(!press)return;clearTimeout(press.timer);press.b.classList.remove('press');const L=lines[+press.b.dataset.i];press=null;copy(L,L.text)});
+ov.addEventListener('pointerdown',e=>{if(['ov','scrim','boxes','sel'].includes(e.target.id))clearSel()}); // empty space never closes
+
+/* partial selection with drag handles + copy menu */
+const isWord=c=>/[A-Za-z0-9.%_\/'-]/.test(c);
+function nearest(L,x){let best=0,d=1e9;L.chars.forEach((c,i)=>{const dd=Math.abs((c.l+c.r)/2-x);if(dd<d){d=dd;best=i}});return best}
+function boundary(L,j){return j===0?L.chars[0].l:L.chars[j-1].r}
+function startSel(i,x){const L=lines[i];let a=nearest(L,x),b=a+1;const c=L.chars[a].ch;
+  if(isWord(c)){while(a>0&&isWord(L.chars[a-1].ch))a--;while(b<L.chars.length&&isWord(L.chars[b].ch))b++}
+  else if(b<L.chars.length&&!isWord(L.chars[b].ch)&&L.chars[b].ch.trim())b++;
+  selState={i,a,b};renderSel();sel.classList.add('on');menu.classList.add('on');try{navigator.vibrate&&navigator.vibrate(18)}catch(_){}}
+function renderSel(){if(!selState)return;const L=lines[selState.i],x1=boundary(L,selState.a),x2=boundary(L,selState.b);
+  Object.assign(selhl.style,{left:x1+'px',top:(L.t-1)+'px',width:(x2-x1)+'px',height:(L.b-L.t+2)+'px'});
+  Object.assign(hL.style,{left:(x1-22)+'px',top:(L.b+1)+'px'});Object.assign(hR.style,{left:x2+'px',top:(L.b+1)+'px'});
+  const mw=menu.offsetWidth||170,mx=Math.max(10,Math.min(W-mw-10,(x1+x2)/2-mw/2)),my=L.t-52<56?L.b+30:L.t-52;
+  Object.assign(menu.style,{left:mx+'px',top:my+'px'});}
+function clearSel(){selState=null;sel.classList.remove('on');menu.classList.remove('on')}
+[hL,hR].forEach(h=>{h.addEventListener('pointerdown',e=>{e.stopPropagation();h.setPointerCapture(e.pointerId);h.dataset.drag=1});
+  h.addEventListener('pointermove',e=>{if(!h.dataset.drag||!selState)return;const L=lines[selState.i],x=local(e).x;let j=0,d=1e9;
+    for(let q=0;q<=L.chars.length;q++){const dd=Math.abs(boundary(L,q)-x);if(dd<d){d=dd;j=q}}
+    if(h===hL)selState.a=Math.min(j,selState.b-1);else selState.b=Math.max(j,selState.a+1);renderSel()});
+  h.addEventListener('pointerup',()=>delete h.dataset.drag)});
+menu.addEventListener('pointerdown',e=>e.stopPropagation());
+menu.addEventListener('click',e=>{const act=e.target.dataset.act;if(!selState||!act)return;const L=lines[selState.i];
+  if(act==='all'){selState.a=0;selState.b=L.chars.length;renderSel();return}
+  const t=L.chars.slice(selState.a,selState.b).map(c=>c.ch).join('');clearSel();copy(L,t)});
+
+/* controls */
+async function replay(){const my=++run;resetOverlay();setState('idle');
+  bubble.className='';bx=W-BS-M;by=380;placeBubble();target.classList.remove('on','hot');shade.classList.remove('on');
+  await wait(700);if(my!==run)return;bubble.classList.add('down');await wait(140);bubble.classList.remove('down');if(my!==run)return;capture()}
+$('#replay').addEventListener('click',replay);
+$('#notext').addEventListener('change',replay);
+setState('idle');setTimeout(replay,400);
+</script>
+</body></html>

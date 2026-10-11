@@ -1,0 +1,423 @@
+<!--
+  Textify frozen-screen capture session — mockup C2 · Glacier Frost
+  Direction: Glacier Frost — Crisp, cool, precise. Two ice-blue / indigo light comets race around the bezel while OCR runs; frosted-ice line boxes with a soft cyan halo; squircle glass chrome; a tight, fast motion curve.
+  Theme: LIGHT ONLY (scrim is a white/tinted veil, no dark surfaces).
+
+  PALETTE (hex)
+    ice         #F0F9FF
+    frost       #E0F2FE
+    page        #EEF4F8
+    ink         #0B1B2B
+    sky         #0EA5E9
+    cyan        #22D3EE
+    glacier     #7DD3FC
+    indigo      #6366F1
+    periwinkle  #A5B4FC
+    deep        #0369A1
+
+  TIMINGS (ms) — every fade/transition <= 400 ms; holds excluded:
+    OCR-wait scrim hold = actual OCR time (slider, default 900, design up to 3000)
+    toastHold = how long the toast stays fully visible; longPress = long-press threshold; pulsePeriod = glow breathing cycle while OCR runs
+    freezeFlash  180 ms
+    glowIn       240 ms
+    scrimDelay   80 ms
+    scrimIn      220 ms
+    scrimOut     200 ms
+    settle       320 ms
+    boxFade      180 ms
+    boxStagger   120 ms
+    close        220 ms
+    bubbleOut    140 ms
+    bubbleIn     220 ms
+    xIn          200 ms
+    toastIn      180 ms
+    toastOut     160 ms
+    toastHold    1200 ms
+    flash        320 ms
+    selIn        160 ms
+    longPress    450 ms
+    targetIn     180 ms
+    magnet       140 ms
+    snap         280 ms
+    dismiss      240 ms
+    pulsePeriod  900 ms
+    pulseDepth   0.18 (alpha dips by this fraction mid-cycle)
+    box padding  5dp x / 3dp y around each OCR line box; magnet radius 96dp
+
+  EDGE GLOW (Canvas: SweepGradient shader on one 1px-step concentric roundRect stroke per dp of width, alpha *= (1-n/width)^falloff — no blur needed, API 26 safe)
+  activation layers (alpha tweened 0->1 over glowIn, back to 0 over settle):
+    width 18dp, alpha 0.5, falloff^2.4, rotation period static; stops 0:#7DD3FC, 0.25:#A5B4FC, 0.5:#7DD3FC, 0.75:#A5B4FC, 1:#7DD3FC
+    width 30dp, alpha 1, falloff^3, rotation period 1600 ms; stops 0:rgba(34,211,238,0), 0.2:rgba(34,211,238,0), 0.37:#22D3EE, 0.445:#F0F9FF, 0.46:rgba(99,102,241,0), 0.7:rgba(99,102,241,0), 0.87:#6366F1, 0.945:#E0F2FE, 0.96:rgba(34,211,238,0), 1:rgba(34,211,238,0)
+  residual layer (alpha tweened 0->1 over settle, stays for the session):
+    width 10dp, alpha 0.42, falloff^2.6, rotation period 30000 ms; stops 0:#38BDF8, 0.5:#818CF8, 1:#38BDF8
+
+  SEQUENCE: tap bubble -> bubble fades (bubbleOut) + freeze flash (freezeFlash) -> glow in (glowIn) -> scrim in after scrimDelay (scrimIn)
+            -> OCR hold -> scrim out (scrimOut) + glow settles to residual (settle) + line boxes fade in, staggered over boxStagger, each boxFade
+            -> close: everything fades (close), bubble fades back (bubbleIn)
+-->
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Textify capture session — C2 · Glacier Frost</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{display:flex;align-items:center;justify-content:center;gap:40px;min-height:100vh;padding:24px;-webkit-font-smoothing:antialiased;user-select:none}
+button{font:inherit;cursor:pointer;border:0}
+/* ---------- phone + fake app screenshot (identical across mockups) ---------- */
+.phone{padding:11px;border-radius:50px;flex:none;position:relative}
+.screen{position:relative;width:412px;height:915px;border-radius:40px;overflow:hidden;background:#F7F7F5;touch-action:none}
+.app{position:absolute;inset:0;display:flex;flex-direction:column;font-family:-apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;color:#1C1C1E}
+.status{height:34px;display:flex;align-items:center;justify-content:space-between;padding:6px 26px 0;font-size:14px;font-weight:600}
+.appbar{height:62px;display:flex;align-items:center;gap:12px;padding:0 14px;background:#fff;box-shadow:0 1px 0 rgba(0,0,0,.04)}
+.av{width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#FBCFE8,#FDE68A);display:grid;place-items:center;font-weight:700;color:#9D174D}
+.name{font-size:16px;font-weight:650}
+.sub{font-size:12px;color:#22A06B}
+.msgs{flex:1;padding:14px 14px 0;display:flex;flex-direction:column;gap:10px;background:#EFEDE8}
+.day{align-self:center;font-size:11.5px;color:#6B6B6B;background:rgba(255,255,255,.7);padding:3px 10px;border-radius:10px}
+.m{max-width:78%;padding:9px 12px;border-radius:18px;font-size:15px;line-height:1.42;box-shadow:0 1px 1px rgba(0,0,0,.05)}
+.m.in{background:#fff;align-self:flex-start;border-top-left-radius:6px}
+.m.out{background:#D9F7BE;align-self:flex-end;border-top-right-radius:6px}
+.m .meta{font-size:11px;color:#8A8A8A;text-align:right;margin-top:2px}
+.card{padding:0;overflow:hidden;width:250px}
+.cardimg{height:96px;background:radial-gradient(circle at 75% 35%,#FDE68A 0 14px,transparent 15px),linear-gradient(170deg,transparent 55%,#7C9A6B 56%),linear-gradient(160deg,transparent 48%,#A3B899 49%),linear-gradient(#FDBA74,#FCE7F3)}
+.card .ct{padding:8px 12px 0;font-weight:650;font-size:14.5px}
+.card .cu{padding:2px 12px 9px;font-size:12px;color:#2563EB}
+.inputbar{height:64px;display:flex;align-items:center;gap:10px;padding:0 12px;background:#fff}
+.field{flex:1;height:42px;border-radius:21px;background:#F2F2F0;display:flex;align-items:center;padding:0 16px;color:#9A9A9A;font-size:15px}
+.send{width:42px;height:42px;border-radius:50%;background:#22A06B;display:grid;place-items:center}
+.gesture{height:22px;background:#fff;display:grid;place-items:center}
+.gesture i{width:120px;height:4px;border-radius:2px;background:#1C1C1E;opacity:.35}
+/* ---------- session overlay (shared mechanics) ---------- */
+#overlay{position:absolute;inset:0;opacity:0;pointer-events:none;transition:opacity var(--t-close) ease}
+#overlay.on{opacity:1;pointer-events:auto;transition-duration:0ms}
+#freeze{position:absolute;inset:0;opacity:0;pointer-events:none}
+#freeze.go{animation:freeze var(--t-freezeFlash) ease-out}
+@keyframes freeze{0%{opacity:0}35%{opacity:1}100%{opacity:0}}
+#scrim{position:absolute;inset:0;opacity:0;transition:opacity var(--t-scrimOut) ease;pointer-events:none}
+#scrim.on{opacity:1;transition-duration:var(--t-scrimIn)}
+#boxes{position:absolute;inset:0}
+.box{position:absolute;opacity:0;transform:translateY(3px);transition:opacity var(--t-boxFade) ease-out,transform var(--t-boxFade) ease-out,background-color 120ms}
+.box.in{opacity:1;transform:none}
+.box.flash{animation:flash var(--t-flash) ease-out}
+canvas#glow{position:absolute;inset:0;width:412px;height:915px;pointer-events:none}
+#selL{position:absolute;inset:0;pointer-events:none}
+.sel{position:absolute;opacity:0;transition:opacity var(--t-selIn) ease-out}
+.sel.on{opacity:1}
+.sel.flash{animation:flash var(--t-flash) ease-out}
+.handle{position:absolute;width:22px;height:22px;pointer-events:none;touch-action:none;transform:scale(.3);opacity:0;transition:transform var(--t-selIn) cubic-bezier(.2,.9,.3,1.3),opacity var(--t-selIn) ease-out}
+.handle.on{transform:scale(1);opacity:1;pointer-events:auto;cursor:ew-resize}
+.handle.drag{transform:scale(1.15)}
+.handle.s{border-radius:50% 0 50% 50%}
+.handle.e{border-radius:0 50% 50% 50%}
+.menu{position:absolute;display:flex;opacity:0;transform:translateY(6px) scale(.96);transition:opacity var(--t-selIn) ease-out,transform var(--t-selIn) ease-out;pointer-events:none;white-space:nowrap}
+.menu.on{opacity:1;transform:none;pointer-events:auto}
+.menu button{background:none;padding:0 14px;height:40px}
+#xbtn{position:absolute;top:44px;right:16px;width:44px;height:44px;border-radius:50%;display:grid;place-items:center;opacity:0;transform:scale(.8);transition:opacity var(--t-xIn) ease-out,transform var(--t-xIn) ease-out}
+#overlay.on #xbtn{opacity:1;transform:none}
+#overlay.on #xbtn:active{transform:scale(.88)}
+#hint{position:absolute;left:50%;top:50%;transform:translate(-50%,-40%);opacity:0;transition:opacity var(--t-boxFade) ease-out,transform var(--t-boxFade) ease-out;pointer-events:none;white-space:nowrap}
+#hint.on{opacity:1;transform:translate(-50%,-50%)}
+#toast{position:absolute;left:50%;bottom:104px;transform:translate(-50%,10px) scale(.96);opacity:0;transition:opacity var(--t-toastOut) ease-in,transform var(--t-toastOut) ease-in;pointer-events:none;white-space:nowrap;display:flex;align-items:center;gap:8px;z-index:5}
+#toast.on{opacity:1;transform:translate(-50%,0);transition:opacity var(--t-toastIn) ease-out,transform var(--t-toastIn) cubic-bezier(.2,.9,.3,1.2)}
+/* bubble + dismiss target */
+#veil{position:absolute;left:0;right:0;bottom:0;height:260px;opacity:0;transition:opacity var(--t-targetIn) ease;pointer-events:none}
+#veil.on{opacity:1}
+#target{position:absolute;left:50%;bottom:84px;width:64px;height:64px;margin-left:-32px;border-radius:50%;display:grid;place-items:center;opacity:0;transform:translateY(24px) scale(.7);transition:opacity var(--t-targetIn) ease-out,transform var(--t-targetIn) cubic-bezier(.2,.9,.3,1.25);pointer-events:none}
+#target.on{opacity:1;transform:none}
+#target.on.hot{transform:scale(1.22)}
+#target.eat{animation:eat var(--t-dismiss) ease-in forwards}
+@keyframes eat{0%{transform:scale(1.22);opacity:1}40%{transform:scale(1.32)}100%{transform:scale(.6);opacity:0}}
+#bubble{position:absolute;width:56px;height:56px;margin:-28px 0 0 -28px;border-radius:50%;display:grid;place-items:center;touch-action:none;cursor:grab;transition:opacity var(--t-bubbleIn) ease-out,transform var(--t-bubbleIn) cubic-bezier(.2,.9,.3,1.2),left var(--t-snap) cubic-bezier(.2,.9,.3,1.15),top var(--t-snap) cubic-bezier(.2,.9,.3,1.15);z-index:6}
+#bubble.drag{transition:opacity var(--t-bubbleIn),transform 120ms;cursor:grabbing;transform:scale(1.06)}
+#bubble.drag.mag{transition:left var(--t-magnet) ease-out,top var(--t-magnet) ease-out,transform var(--t-magnet)}
+#bubble.hide{opacity:0;transform:scale(.6);pointer-events:none;transition-duration:var(--t-bubbleOut)}
+#bubble.gone{opacity:0;transform:scale(.2);pointer-events:none;transition:opacity var(--t-dismiss) ease-in,transform var(--t-dismiss) ease-in}
+/* control panel */
+.panel{width:300px;flex:none;display:flex;flex-direction:column;gap:14px}
+.panel h1{font-size:24px;line-height:1.15}
+.panel p.d{font-size:13px;line-height:1.55;opacity:.78}
+.panel .row{display:flex;gap:8px;flex-wrap:wrap}
+.panel label{font-size:13px;display:flex;align-items:center;gap:8px}
+.panel .state{font-size:12px;opacity:.7;font-family:ui-monospace,Menlo,monospace}
+.panel ul{font-size:12px;line-height:1.7;padding-left:16px;opacity:.75}
+.pb{height:38px;padding:0 16px;border-radius:19px;font-size:13.5px;font-weight:600}
+#st{position:fixed;left:0;bottom:0;font-size:10px;opacity:0}
+
+body{background:radial-gradient(900px 600px at 20% 10%,#FFFFFF,#E7F0F6 60%,#DCE8F1);color:#0B1B2B;font-family:ui-rounded,"SF Pro Rounded","Hiragino Maru Gothic ProN",system-ui,sans-serif}
+.phone{background:linear-gradient(160deg,#FFFFFF,#D9E5EE);box-shadow:0 30px 60px -24px rgba(15,40,70,.35)}
+.panel h1{font-weight:700;letter-spacing:-.02em}
+.pb{background:#0EA5E9;color:#fff;border-radius:12px;box-shadow:0 6px 16px -6px rgba(14,165,233,.7)}
+.pb.ghost{background:rgba(255,255,255,.8);color:#0369A1;box-shadow:0 2px 8px rgba(15,40,70,.1)}
+input[type=range],input[type=checkbox]{accent-color:#0EA5E9}
+#freeze{background:rgba(240,249,255,.7)}
+#scrim{background:rgba(240,249,255,.40);backdrop-filter:blur(1px)} /* blur = API 31+ RenderEffect enhancement; API 26-30: veil only */
+.box{background:rgba(186,230,253,.30);border-radius:8px;box-shadow:0 0 10px rgba(56,189,248,.20)}
+.box.press{background:rgba(186,230,253,.65)}
+.box.selecting{background:rgba(224,242,254,.2);box-shadow:none}
+@keyframes flash{0%{background:rgba(14,165,233,.42);box-shadow:0 0 18px rgba(14,165,233,.55)}100%{}}
+.sel{background:rgba(14,165,233,.26);border-radius:4px}
+.handle{background:#0284C7;box-shadow:0 2px 6px rgba(2,132,199,.35)}
+.menu{background:rgba(255,255,255,.9);border-radius:12px;box-shadow:0 10px 28px -8px rgba(15,40,70,.28);font-family:ui-rounded,system-ui,sans-serif;font-weight:600;font-size:14px}
+.menu button{color:#0B1B2B}
+#xbtn{border-radius:15px;background:rgba(255,255,255,.88);color:#0369A1;box-shadow:0 6px 18px -6px rgba(15,40,70,.3)}
+#toast{background:rgba(255,255,255,.92);color:#0B1B2B;padding:10px 18px 10px 10px;border-radius:14px;box-shadow:0 14px 30px -12px rgba(15,40,70,.38);font-weight:650;font-size:14.5px;font-family:ui-rounded,system-ui,sans-serif}
+#toast .ti{width:26px;height:26px;border-radius:9px;background:linear-gradient(135deg,#22D3EE,#6366F1);color:#fff;display:grid;place-items:center}
+#hint{background:rgba(255,255,255,.92);color:#0B1B2B;padding:12px 20px 12px 12px;border-radius:16px;box-shadow:0 16px 36px -14px rgba(15,40,70,.35);display:flex;align-items:center;gap:10px;font-weight:650;font-size:15px;font-family:ui-rounded,system-ui,sans-serif}
+#hint .hi{width:30px;height:30px;border-radius:10px;background:#E0F2FE;color:#0284C7;display:grid;place-items:center}
+#bubble{background:rgba(255,255,255,.96);color:#0284C7;box-shadow:0 10px 26px -8px rgba(15,40,70,.4),0 0 18px rgba(56,189,248,.35)}
+
+#target{background:rgba(255,255,255,.95);color:#0284C7;box-shadow:0 10px 24px -8px rgba(15,40,70,.35)}
+#target.hot{background:#0EA5E9;color:#fff;box-shadow:0 0 24px rgba(14,165,233,.55)}
+#veil{background:linear-gradient(to top,rgba(240,249,255,.94),rgba(240,249,255,0))}
+
+</style>
+</head>
+<body>
+<div class="panel">
+  <h1>C2 · Glacier Frost</h1>
+  <p class="d">Crisp, cool, precise. Two ice-blue / indigo light comets race around the bezel while OCR runs; frosted-ice line boxes with a soft cyan halo; squircle glass chrome; a tight, fast motion curve.</p>
+  <div class="row">
+    <button class="pb" id="replay">Replay</button>
+    <button class="pb ghost" id="back">System back</button>
+    <button class="pb ghost" id="restore">Restore bubble</button>
+  </div>
+  <label><input type="checkbox" id="notext"> "No text detected" state</label>
+  <label>OCR time <input type="range" id="ocr" min="500" max="3000" step="100" value="900"> <span id="ocrv">900</span> ms</label>
+  <div class="state" id="stateL">state: idle</div>
+  <ul>
+    <li>Tap the bubble to capture</li>
+    <li>Tap a box = copy line · long-press = select part (drag the handles)</li>
+    <li>X or Esc (= system back) closes; tapping empty space does nothing</li>
+    <li>Drag the bubble onto the bottom target to stop the service</li>
+  </ul>
+</div>
+<div class="phone"><div class="screen" id="screen">
+  <div class="app">
+    <div class="status"><span data-ocr>9:41</span><svg width="64" height="12" viewBox="0 0 64 12"><rect x="0" y="6" width="3" height="6" rx="1" fill="#1C1C1E"/><rect x="5" y="4" width="3" height="8" rx="1" fill="#1C1C1E"/><rect x="10" y="2" width="3" height="10" rx="1" fill="#1C1C1E"/><rect x="15" y="0" width="3" height="12" rx="1" fill="#1C1C1E"/><rect x="38" y="1" width="22" height="10" rx="3" fill="#1C1C1E" fill-opacity=".18"/><rect x="40" y="3" width="15" height="6" rx="1.5" fill="#1C1C1E"/></svg></div>
+    <div class="appbar"><svg width="22" height="22" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#1C1C1E" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><div class="av">雨</div><div><div class="name" data-ocr>林小雨 Lin Xiaoyu</div><div class="sub" data-ocr>上線中 · online</div></div></div>
+    <div class="msgs">
+      <div class="day" data-ocr>今天 Today</div>
+      <div class="m in"><p data-ocr>週末要不要去京都？I found a tiny café near Kamogawa that opens at 7.</p><div class="meta" data-ocr>10:02</div></div>
+      <div class="m out"><p data-ocr>好啊！我週六早上有空，可以搭 8:12 的新幹線。</p><div class="meta" data-ocr>10:04 ✓✓</div></div>
+      <div class="m in card"><div class="cardimg"></div><p class="ct" data-ocr>Kyoto in 48 Hours — 京都兩日散步路線</p><p class="cu" data-ocr>travel.example/kyoto-48h</p></div>
+      <div class="m in"><p data-ocr>地址是 京都市左京區下鴨宮河町 12-3，記得帶現金。</p></div>
+      <div class="m out"><p data-ocr>Booking ref: TXF-2048-QZ. 我先截圖存起來！</p><div class="meta" data-ocr>10:07 ✓✓</div></div>
+      <div class="m in"><p data-ocr>Also the 鴨川 riverside walk at sunset is perfect for photos.</p></div>
+    </div>
+    <div class="inputbar"><div class="field" data-ocr>輸入訊息 Message</div><div class="send"><svg width="20" height="20" viewBox="0 0 24 24"><path d="M4 12l16-8-6 16-2-7z" fill="#fff"/></svg></div></div>
+    <div class="gesture"><i></i></div>
+  </div>
+
+  <div id="overlay">
+    <div id="scrim"></div>
+    <div id="boxes"></div>
+    <div id="selL"><div class="sel" id="selR"></div></div>
+    <canvas id="glow"></canvas>
+    <div id="freeze"></div>
+    <div class="handle s" id="hS"></div><div class="handle e" id="hE"></div>
+    <div class="menu" id="menu"><button data-a="copy">Copy</button><button data-a="all">Select all</button><button data-a="share">Share</button></div>
+    <div id="hint"><span class="hi"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M8 12h8"/></svg></span>No text detected</div>
+    <button id="xbtn" aria-label="Close"><svg width="18" height="18" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button>
+  </div>
+  <div id="toast"><span class="ti"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span><span class="tt">Copied to clipboard</span></div>
+  <div id="veil"></div>
+  <div id="target"><svg width="22" height="22" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></div>
+  <div id="bubble" aria-label="Textify bubble"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M8.5 9h7M12 9v7"/></svg></div>
+</div></div>
+<pre id="st"></pre>
+<script>
+const T={"t": {"freezeFlash": 180, "glowIn": 240, "scrimDelay": 80, "scrimIn": 220, "scrimOut": 200, "settle": 320, "boxFade": 180, "boxStagger": 120, "close": 220, "bubbleOut": 140, "bubbleIn": 220, "xIn": 200, "toastIn": 180, "toastOut": 160, "toastHold": 1200, "flash": 320, "selIn": 160, "longPress": 450, "targetIn": 180, "magnet": 140, "snap": 280, "dismiss": 240, "pulsePeriod": 900}, "pulseDepth": 0.18, "pad": [5, 3], "magnet": 96, "copied": "Copied to clipboard", "glow": [{"width": 18, "falloff": 2.4, "alpha": 0.5, "period": 0, "stops": [[0, "#7DD3FC"], [0.25, "#A5B4FC"], [0.5, "#7DD3FC"], [0.75, "#A5B4FC"], [1, "#7DD3FC"]]}, {"width": 30, "falloff": 3, "alpha": 1, "period": 1600, "stops": [[0, "rgba(34,211,238,0)"], [0.2, "rgba(34,211,238,0)"], [0.37, "#22D3EE"], [0.445, "#F0F9FF"], [0.46, "rgba(99,102,241,0)"], [0.7, "rgba(99,102,241,0)"], [0.87, "#6366F1"], [0.945, "#E0F2FE"], [0.96, "rgba(34,211,238,0)"], [1, "rgba(34,211,238,0)"]]}], "residual": [{"width": 10, "falloff": 2.6, "alpha": 0.42, "period": 30000, "stops": [[0, "#38BDF8"], [0.5, "#818CF8"], [1, "#38BDF8"]]}]};
+(()=>{
+const errs=[];addEventListener('error',e=>errs.push(e.message));addEventListener('unhandledrejection',e=>errs.push('rej:'+(e.reason&&e.reason.message||e.reason)));
+const $=s=>document.querySelector(s);
+const screen=$('#screen'),ov=$('#overlay'),scrim=$('#scrim'),boxesEl=$('#boxes'),cv=$('#glow'),ctx=cv.getContext('2d');
+const bubble=$('#bubble'),target=$('#target'),veil=$('#veil'),toast=$('#toast'),hint=$('#hint'),menu=$('#menu'),selR=$('#selR'),hS=$('#hS'),hE=$('#hE');
+const W=412,H=915,R=40,dpr=devicePixelRatio||1;
+cv.width=W*dpr;cv.height=H*dpr;ctx.scale(dpr,dpr);
+for(const k in T.t)document.documentElement.style.setProperty('--t-'+k,T.t[k]+'ms');
+let state='idle',timers=[],lines=null,boxes=[],sel=null,toastTimer=0,ocrStart=0;
+const setState=s=>{state=s;$('#stateL').textContent='state: '+s};
+const later=(f,ms)=>{const id=setTimeout(f,ms);timers.push(id);return id};
+
+/* ---- tween + glow renderer (maps 1:1 to ValueAnimator + Canvas SweepGradient strokes, no blur needed) ---- */
+const glow={i:0,res:0},tweens=[];
+const ease=x=>1-Math.pow(1-x,3);
+function tween(o,k,to,ms){for(let j=tweens.length-1;j>=0;j--)if(tweens[j].o===o&&tweens[j].k===k)tweens.splice(j,1);tweens.push({o,k,from:o[k],to,ms,t0:performance.now()})}
+function rrect(x,y,w,h,r){ctx.beginPath();ctx.roundRect(x,y,w,h,Math.max(r,2))}
+function edge(L,alpha,now){
+  if(alpha<.004)return;
+  const rot=(L.period?now/L.period:0)*Math.PI*2*(L.dir||1)+(L.phase||0);
+  const g=ctx.createConicGradient(rot,W/2,H/2);
+  for(const [p,c] of L.stops)g.addColorStop(p,c);
+  ctx.strokeStyle=g;
+  const N=Math.ceil(L.width);ctx.lineWidth=1.6;
+  for(let n=0;n<N;n++){const f=n/N,inset=n+.5;
+    ctx.globalAlpha=alpha*L.alpha*Math.pow(1-f,L.falloff);
+    rrect(inset,inset,W-2*inset,H-2*inset,R-inset);ctx.stroke()}
+  ctx.globalAlpha=1;
+}
+function frame(now){
+  for(let j=tweens.length-1;j>=0;j--){const w=tweens[j],x=Math.min(1,(now-w.t0)/w.ms);w.o[w.k]=w.from+(w.to-w.from)*ease(x);if(x>=1)tweens.splice(j,1)}
+  ctx.clearRect(0,0,W,H);
+  let a=glow.i;
+  if(state==='ocr'){const ph=(now-ocrStart)/T.t.pulsePeriod;a*=1-T.pulseDepth*(.5-.5*Math.cos(ph*Math.PI*2))}
+  for(const L of T.glow)edge(L,a,now);
+  for(const L of T.residual)edge(L,glow.res,now);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ---- OCR stand-in: one box per rendered text line (like ML Kit Text.Line bounding boxes) ---- */
+function measure(){
+  const sr=screen.getBoundingClientRect(),out=[];
+  document.querySelectorAll('[data-ocr]').forEach(el=>{
+    const tw=document.createTreeWalker(el,NodeFilter.SHOW_TEXT);let cur=null,node;
+    while(node=tw.nextNode()){for(let i=0;i<node.data.length;i++){
+      const r=document.createRange();r.setStart(node,i);r.setEnd(node,i+1);
+      const rc=[...r.getClientRects()].find(q=>q.width>0);if(!rc)continue;
+      const ch=node.data[i],top=rc.top-sr.top;
+      if(!cur||Math.abs(top-cur.top)>rc.height/2){cur={top,bottom:rc.bottom-sr.top,chars:[]};out.push(cur)}
+      cur.bottom=Math.max(cur.bottom,rc.bottom-sr.top);
+      cur.chars.push({ch,l:rc.left-sr.left,r:rc.right-sr.left});
+    }}
+  });
+  return out.map(L=>{while(L.chars.length&&!L.chars[L.chars.length-1].ch.trim())L.chars.pop();while(L.chars.length&&!L.chars[0].ch.trim())L.chars.shift();
+    return L.chars.length?{...L,left:L.chars[0].l,right:L.chars[L.chars.length-1].r,text:L.chars.map(c=>c.ch).join('')}:null}).filter(Boolean);
+}
+function buildBoxes(){
+  lines=lines||measure();boxesEl.innerHTML='';
+  const px=T.pad[0],py=T.pad[1],n=lines.length;
+  boxes=lines.map((L,i)=>{const b=document.createElement('div');b.className='box';
+    Object.assign(b.style,{left:L.left-px+'px',top:L.top-py+'px',width:L.right-L.left+2*px+'px',height:L.bottom-L.top+2*py+'px',transitionDelay:Math.round(i/(n-1||1)*T.t.boxStagger)+'ms'});
+    b.line=L;wireBox(b);boxesEl.appendChild(b);return b});
+  requestAnimationFrame(()=>requestAnimationFrame(()=>boxes.forEach(b=>b.classList.add('in'))));
+  later(()=>boxes.forEach(b=>b.style.transitionDelay='0ms'),T.t.boxFade+T.t.boxStagger+40);
+}
+
+/* ---- session flow ---- */
+function startCapture(){
+  if(state!=='idle')return;
+  setState('ocr');ocrStart=performance.now();
+  bubble.classList.add('hide');
+  ov.classList.add('on');
+  const fz=$('#freeze');fz.classList.remove('go');void fz.offsetWidth;fz.classList.add('go');
+  tween(glow,'i',1,T.t.glowIn);
+  later(()=>scrim.classList.add('on'),T.t.scrimDelay);
+  later(finishOcr,+$('#ocr').value);
+}
+function finishOcr(){
+  if(state!=='ocr')return;setState('session');
+  scrim.classList.remove('on');
+  tween(glow,'i',0,T.t.settle);tween(glow,'res',1,T.t.settle);
+  if($('#notext').checked)hint.classList.add('on');else buildBoxes();
+}
+function closeSession(){
+  if(state!=='ocr'&&state!=='session')return;
+  setState('closing');timers.forEach(clearTimeout);timers=[];clearSel();
+  ov.classList.remove('on');scrim.classList.remove('on');toast.classList.remove('on');
+  tween(glow,'i',0,T.t.close);tween(glow,'res',0,T.t.close);
+  setTimeout(()=>{boxesEl.innerHTML='';boxes=[];hint.classList.remove('on');setState('idle');
+    if(!bubble.classList.contains('gone'))bubble.classList.remove('hide')},T.t.close);
+}
+$('#xbtn').addEventListener('click',closeSession);
+addEventListener('keydown',e=>{if(e.key==='Escape')closeSession()});
+$('#back').addEventListener('click',closeSession);
+ov.addEventListener('pointerdown',e=>{if(e.target===ov||e.target===boxesEl||e.target===scrim)clearSel()});
+
+/* ---- copy + toast ---- */
+function copyText(t){try{navigator.clipboard&&navigator.clipboard.writeText(t).catch(()=>{})}catch(_){}}
+function showToast(msg){toast.querySelector('.tt').textContent=msg;toast.classList.remove('on');void toast.offsetWidth;toast.classList.add('on');
+  clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.classList.remove('on'),T.t.toastIn+T.t.toastHold)}
+function flash(el){el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash')}
+function copyLine(b){clearSel();copyText(b.line.text);flash(b);showToast(T.copied)}
+
+/* ---- tap vs long-press on a box ---- */
+function wireBox(b){
+  let lp=0,x0=0,y0=0;
+  b.addEventListener('pointerdown',e=>{x0=e.clientX;y0=e.clientY;b.classList.add('press');
+    lp=setTimeout(()=>{lp=0;b.classList.remove('press');startSel(b,x0)},T.t.longPress)});
+  b.addEventListener('pointermove',e=>{if(lp&&Math.hypot(e.clientX-x0,e.clientY-y0)>10){clearTimeout(lp);lp=0;b.classList.remove('press')}});
+  const end=ok=>()=>{b.classList.remove('press');if(lp){clearTimeout(lp);lp=0;if(ok)copyLine(b)}};
+  b.addEventListener('pointerup',end(true));b.addEventListener('pointerleave',end(false));b.addEventListener('pointercancel',end(false));
+}
+
+/* ---- partial selection with handles ---- */
+function startSel(b,clientX){
+  clearSel();const L=b.line,n=L.chars.length,sx=clientX-screen.getBoundingClientRect().left;
+  let k=L.chars.findIndex(c=>sx<c.r);if(k<0)k=n-1;
+  let a=k,z=k+1;const word=/[A-Za-z0-9\-:.\/]/;
+  if(word.test(L.chars[k].ch)){while(a>0&&word.test(L.chars[a-1].ch))a--;while(z<n&&word.test(L.chars[z].ch))z++}
+  else{a=Math.max(0,k-1);z=Math.min(n,k+2)}
+  sel={b,a,z};b.classList.add('selecting');drawSel();
+  requestAnimationFrame(()=>{drawSel();[selR,hS,hE,menu].forEach(x=>x.classList.add('on'))});
+}
+function drawSel(){
+  const {b,a,z}=sel,L=b.line,l=L.chars[a].l,r=L.chars[z-1].r;
+  Object.assign(selR.style,{left:l-1+'px',top:L.top-1+'px',width:r-l+2+'px',height:L.bottom-L.top+2+'px'});
+  Object.assign(hS.style,{left:l-22+'px',top:L.bottom+'px'});Object.assign(hE.style,{left:r+'px',top:L.bottom+'px'});
+  const mw=menu.offsetWidth||230,mx=Math.min(W-mw-8,Math.max(8,(l+r)/2-mw/2));
+  const my=L.top-54<90?L.bottom+30:L.top-54;
+  Object.assign(menu.style,{left:mx+'px',top:my+'px'});
+}
+function clearSel(){if(!sel)return;sel.b.classList.remove('selecting');sel=null;[selR,hS,hE,menu].forEach(x=>x.classList.remove('on'))}
+function dragHandle(h,isStart){
+  h.addEventListener('pointerdown',e=>{e.stopPropagation();h.setPointerCapture(e.pointerId);h.classList.add('drag')});
+  h.addEventListener('pointermove',e=>{if(!sel||!h.hasPointerCapture(e.pointerId))return;
+    const x=e.clientX-screen.getBoundingClientRect().left,C=sel.b.line.chars;
+    if(isStart){let best=0;for(let i=0;i<sel.z;i++)if(Math.abs(C[i].l-x)<Math.abs(C[best].l-x))best=i;sel.a=best}
+    else{let best=sel.a+1;for(let i=sel.a+1;i<=C.length;i++)if(Math.abs(C[i-1].r-x)<Math.abs(C[best-1].r-x))best=i;sel.z=best}
+    drawSel()});
+  h.addEventListener('pointerup',()=>h.classList.remove('drag'));
+}
+dragHandle(hS,true);dragHandle(hE,false);
+menu.addEventListener('click',e=>{const a=e.target.dataset.a;if(!a||!sel)return;
+  if(a==='all'){sel.a=0;sel.z=sel.b.line.chars.length;drawSel();return}
+  if(a==='copy'){copyText(sel.b.line.chars.slice(sel.a,sel.z).map(c=>c.ch).join(''));flash(selR);showToast(T.copied);setTimeout(clearSel,T.t.flash)}
+  if(a==='share'){showToast('Share sheet (system)');clearSel()}});
+
+/* ---- bubble: tap / drag / edge snap / Messenger-style dismiss ---- */
+const home={x:W-36,y:420},tc={x:W/2,y:H-84-32};
+let bx=home.x,by=home.y;
+const place=()=>{bubble.style.left=bx+'px';bubble.style.top=by+'px'};place();
+let drag=null;
+bubble.addEventListener('pointerdown',e=>{if(state!=='idle')return;bubble.setPointerCapture(e.pointerId);drag={x0:e.clientX,y0:e.clientY,bx0:bx,by0:by,moved:false,mag:false}});
+bubble.addEventListener('pointermove',e=>{if(!drag)return;const dx=e.clientX-drag.x0,dy=e.clientY-drag.y0;
+  if(!drag.moved&&Math.hypot(dx,dy)<8)return;
+  if(!drag.moved){drag.moved=true;bubble.classList.add('drag');target.classList.add('on');veil.classList.add('on')}
+  const fx=Math.max(28,Math.min(W-28,drag.bx0+dx)),fy=Math.max(60,Math.min(H-40,drag.by0+dy));
+  const near=Math.hypot(fx-tc.x,fy-tc.y)<T.magnet;
+  if(near!==drag.mag){drag.mag=near;bubble.classList.toggle('mag',near);target.classList.toggle('hot',near)}
+  if(near){bx=tc.x;by=tc.y}else{bx=fx;by=fy}place()});
+bubble.addEventListener('pointerup',()=>{if(!drag)return;const d=drag;drag=null;
+  if(!d.moved){startCapture();return}
+  bubble.classList.remove('drag','mag');veil.classList.remove('on');
+  if(d.mag){bubble.classList.add('gone');target.classList.add('eat');
+    setTimeout(()=>{target.classList.remove('on','hot','eat')},T.t.dismiss);setState('service stopped');return}
+  target.classList.remove('on','hot');bx=bx<W/2?36:W-36;place()});
+function restore(){bubble.classList.add('hide');bubble.classList.remove('gone');bx=home.x;by=home.y;place();
+  requestAnimationFrame(()=>requestAnimationFrame(()=>bubble.classList.remove('hide')));if(state==='service stopped')setState('idle')}
+$('#restore').addEventListener('click',restore);
+$('#ocr').addEventListener('input',e=>$('#ocrv').textContent=e.target.value);
+$('#replay').addEventListener('click',()=>{const go=()=>{restore();setTimeout(startCapture,T.t.bubbleIn+300)};
+  if(state==='ocr'||state==='session'){closeSession();setTimeout(go,T.t.close+20)}else if(state!=='closing')go()});
+
+/* ---- headless self-test / screenshot hooks: #selftest #shot #shotsel #shotocr #shotdrag #shotnone ---- */
+const h=location.hash,st=$('#st');
+if(h==='#selftest'){const log=[];setTimeout(startCapture,100);
+  setTimeout(()=>{log.push('state='+state+' boxes='+boxes.length);copyLine(boxes[3]);log.push('toast='+toast.classList.contains('on'));
+    startSel(boxes[4],boxes[4].getBoundingClientRect().left+20);log.push('sel='+!!sel)},1600);
+  setTimeout(()=>{log.push('handles='+hS.classList.contains('on'));closeSession()},2200);
+  setTimeout(()=>{log.push('closed='+state+' bubbleHidden='+bubble.classList.contains('hide'));$('#notext').checked=true;startCapture()},2800);
+  setTimeout(()=>{log.push('notext hint='+hint.classList.contains('on')+' boxes='+boxes.length);closeSession()},4200);
+  setTimeout(()=>{log.push('final='+state+' errors='+errs.length+' '+errs.join('|'));st.textContent='SELFTEST\n'+log.join('\n')},4800)}
+if(h==='#shot'||h==='#shotsel'){setTimeout(startCapture,50);if(h==='#shotsel')setTimeout(()=>{copyLine(boxes[2]);startSel(boxes[8],boxes[8].getBoundingClientRect().left+30)},1300)}
+if(h==='#shotnone'){$('#notext').checked=true;setTimeout(startCapture,50)}
+if(h==='#shotocr'){$('#ocr').value=5000;setTimeout(startCapture,50)}
+if(h==='#shotdrag'){bx=tc.x;by=tc.y;place();bubble.classList.add('drag');target.classList.add('on','hot');veil.classList.add('on')}
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="24dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/hint"
+        android:paddingBottom="24dp" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/script_label"
+        android:textStyle="bold"
+        android:paddingBottom="8dp" />
+
+    <RadioGroup
+        android:id="@+id/scriptGroup"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+        <RadioButton android:id="@+id/scriptChinese"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="@string/script_chinese" />
+        <RadioButton android:id="@+id/scriptJapanese"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="@string/script_japanese" />
+        <RadioButton android:id="@+id/scriptKorean"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="@string/script_korean" />
+    </RadioGroup>
+
+    <Button
+        android:id="@+id/startButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="24dp"
+        android:text="@string/start" />
+
+    <Button
+        android:id="@+id/stopButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/stop" />
+</LinearLayout>

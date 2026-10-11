@@ -1,0 +1,10 @@
+<resources>
+    <style name="Theme.Textify" parent="Theme.AppCompat.DayNight">
+        <item name="colorPrimary">#3F6FFF</item>
+    </style>
+    <style name="Theme.Textify.Transparent" parent="Theme.AppCompat.DayNight">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:backgroundDimEnabled">true</item>
+    </style>
+</resources>
