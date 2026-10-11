@@ -2,21 +2,22 @@ package us.jhangy.textify
 
 import android.content.Context
 
-/** Which ML Kit script model to run. The Chinese model also covers Latin/English. */
+/** ML Kit script models. Every model also reads Latin/English. */
 enum class Script { CHINESE, JAPANESE, KOREAN }
 
 object Prefs {
     private const val FILE = "textify"
-    private const val KEY_SCRIPT = "script"
+    private const val SCRIPTS_KEY = "scripts"   // StringSet of Script names
 
-    fun script(ctx: Context): Script {
-        val name = ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)
-            .getString(KEY_SCRIPT, Script.CHINESE.name)!!
-        return runCatching { Script.valueOf(name) }.getOrDefault(Script.CHINESE)
+    /** Selected scripts in enum order; unknown names dropped; empty or missing -> CHINESE. */
+    fun scripts(ctx: Context): Set<Script> {
+        val names = ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).getStringSet(SCRIPTS_KEY, null).orEmpty()
+        return Script.entries.filterTo(LinkedHashSet()) { it.name in names }.ifEmpty { setOf(Script.CHINESE) }
     }
 
-    fun setScript(ctx: Context, script: Script) {
-        ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)
-            .edit().putString(KEY_SCRIPT, script.name).apply()
+    fun setScripts(ctx: Context, scripts: Set<Script>) {
+        require(scripts.isNotEmpty())
+        ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+            .putStringSet(SCRIPTS_KEY, scripts.mapTo(HashSet()) { it.name }).apply()
     }
 }

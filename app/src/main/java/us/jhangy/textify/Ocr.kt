@@ -3,7 +3,10 @@ package us.jhangy.textify
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Rect
+import android.os.Handler
+import android.os.Looper
 import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.TextRecognizer
 import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
@@ -13,31 +16,53 @@ import com.google.mlkit.vision.text.korean.KoreanTextRecognizerOptions
 /** One recognised text line. [box] is in screenshot (bitmap) pixels. */
 data class OcrLine(val text: String, val box: Rect)
 
-/** On-device OCR. The recognizer for the chosen script runs fully offline. */
+/** On-device OCR. Every selected script model runs fully offline, all in parallel on the same image. */
 object Ocr {
-    /** Calls [onResult] once on the main thread, lines sorted top-to-bottom then left-to-right. On failure the list is empty. */
-    fun recognize(ctx: Context, bitmap: Bitmap, script: Script, onResult: (List<OcrLine>) -> Unit) {
-        val recognizer: TextRecognizer = when (script) {
-            Script.CHINESE -> TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
-            Script.JAPANESE -> TextRecognition.getClient(JapaneseTextRecognizerOptions.Builder().build())
-            Script.KOREAN -> TextRecognition.getClient(KoreanTextRecognizerOptions.Builder().build())
+    /**
+     * Calls [onResult] exactly once on the main thread after every recognizer completed; overlapping lines
+     * are merged by [mergeOcr] (sorted top, then left). A failing recognizer contributes no lines.
+     */
+    fun recognize(ctx: Context, bitmap: Bitmap, scripts: Set<Script>, onResult: (List<OcrLine>) -> Unit) {
+        val main = Handler(Looper.getMainLooper())
+        val image = try {
+            InputImage.fromBitmap(bitmap, 0)
+        } catch (e: Exception) {                 // e.g. recycled bitmap
+            main.post { onResult(emptyList()) }
+            return
         }
-        try {
-            recognizer.process(InputImage.fromBitmap(bitmap, 0))
-                .addOnSuccessListener { result ->
-                    onResult(
-                        result.textBlocks.flatMap { it.lines }
-                            .mapNotNull { line -> line.boundingBox?.let { OcrLine(line.text, it) } }
-                            .filter { it.text.isNotBlank() }
-                            .sortedWith(compareBy({ it.box.top }, { it.box.left }))
-                    )
-                }
-                .addOnFailureListener { onResult(emptyList()) }
-                .addOnCompleteListener { recognizer.close() }
-        } catch (e: Exception) {
-            // e.g. recycled bitmap: InputImage.fromBitmap / process throws synchronously
-            recognizer.close()
-            onResult(emptyList())
+        if (scripts.isEmpty()) { main.post { onResult(emptyList()) }; return }
+        val parts = arrayOfNulls<List<OcrCandidate>>(scripts.size)   // touched on the main thread only
+        var pending = scripts.size
+        fun done(i: Int, found: List<OcrCandidate>) = main.post {
+            parts[i] = found
+            if (--pending == 0) {
+                onResult(mergeOcr(parts.flatMap { it.orEmpty() })
+                    .map { OcrLine(it.text, Rect(it.left, it.top, it.right, it.bottom)) })
+            }
         }
+        scripts.forEachIndexed { i, script ->
+            val recognizer = client(script)
+            try {
+                recognizer.process(image)
+                    .addOnSuccessListener { done(i, candidates(it)) }
+                    .addOnFailureListener { done(i, emptyList()) }
+                    .addOnCompleteListener { recognizer.close() }
+            } catch (e: Exception) {             // synchronous throw from process()
+                recognizer.close()
+                done(i, emptyList())
+            }
+        }
+    }
+
+    private fun client(script: Script): TextRecognizer = when (script) {
+        Script.CHINESE -> TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
+        Script.JAPANESE -> TextRecognition.getClient(JapaneseTextRecognizerOptions.Builder().build())
+        Script.KOREAN -> TextRecognition.getClient(KoreanTextRecognizerOptions.Builder().build())
+    }
+
+    private fun candidates(result: Text): List<OcrCandidate> = result.textBlocks.flatMap { it.lines }.mapNotNull { line ->
+        val b = line.boundingBox
+        if (b == null || line.text.isBlank()) null
+        else OcrCandidate(line.text, b.left, b.top, b.right, b.bottom, line.confidence)   // Text.Line.getConfidence(), §12
     }
 }
