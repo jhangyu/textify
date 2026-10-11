@@ -21,3 +21,16 @@ Status: design approved; mockup phase. Mockup brief (requirements + style rules)
 
 ## Out of scope (this phase)
 Implementation; app-UI language switching; dark theme.
+
+## Chosen directions (user, after round 1)
+- Launcher icon: `icon-2-halo-orb`, background layer redesigned to a full-bleed edge-fading halo so it fits every
+  adaptive mask; `ic_launcher_round` keeps the exact circular ring. Candidates: `icon-final-*.html`.
+- Bubble glyph: `icon-3-lumen-pill`, glyph inner padding 9dp in the 56dp bubble.
+- Notification small icon: `icon-1-prism-frame`.
+- Settings: one merged page = `settings-1-twin-halo` button/transition/frame + permission section in the style of
+  `permission-2-living-demo` + language section in the style of `language-3-live-preview` → `settings-final.html`.
+- First-launch onboarding without overlay permission: full `permission-2-living-demo` screen.
+- Leaving settings with overlay permission off: bubble stays hidden, notice 「未授權懸浮權限，泡泡暫時無法顯示」.
+- Speed copy must not claim 2×/3× (models run in parallel); English lines light for any selected script.
+- Verify before implementing: consent-dialog wording / API 34 "share entire screen" picker; API 30+ behaviour of
+  ACTION_MANAGE_OVERLAY_PERMISSION with a package Uri.
