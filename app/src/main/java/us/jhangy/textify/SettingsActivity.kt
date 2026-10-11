@@ -37,9 +37,10 @@ class SettingsActivity : AppCompatActivity() {
     private val main = Handler(Looper.getMainLooper())
     private var granted: Boolean? = null            // null until the first onResume
     private var openingSystemSettings = false
-    private var visibleSent = false                 // last CaptureService.setSettingsVisible call was true
+    private var visibleSent = false                 // the service was last told that settings is visible
     private var leaving = false
     private val recheck = Runnable { applyPermission(Settings.canDrawOverlays(this)) }
+    private val autoHide = Runnable { hideBlock() }
     private val d get() = resources.displayMetrics.density
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -162,7 +163,75 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     // ---- language card (§7.4): step C2.2 ----
-    private fun setupLanguageCard() { /* C2 */ }
+    private fun setupLanguageCard() {
+        // static styling (the preview's shot, rows, tags and avatar are styled by LanguagePreviewView)
+        val capsule = GlowDrawable(round(withAlpha(0.94f, 0xFFFFFF), 18 * d), withAlpha(0.28f, 0xA78BFA), 16 * d, 0f, 0f, 18 * d)
+        b.noteBlock.background = GlowDrawable(capsule, withAlpha(0.10f, 0x4C1D95), 18 * d, 6 * d, 0f, 18 * d)
+        b.noteBar.background = CssGradientDrawable(intArrayOf(0xFFF472B6.toInt(), 0xFFFDBA74.toInt()), null, 180f, 3 * d)
+        b.timeline.background = round(withAlpha(0.90f, 0xFAF5FF), 20 * d)
+        b.lanes.setLabels(getString(R.string.tag_zh), getString(R.string.tag_ja), getString(R.string.tag_ko))
+
+        // initial state, no animation; preview lights after settingsIn (onCreate)
+        val selected = Prefs.scripts(this)
+        for ((script, toggle) in toggles()) {
+            toggle.setChecked(script in selected, animate = false)
+            toggle.setOnClickListener { onToggle(script, toggle) }
+        }
+        b.preview.setScripts(emptySet(), animate = false)
+        b.lanes.setScripts(selected, animate = false)
+        showSpeed(selected.size)
+    }
+
+    private fun toggles() = listOf(Script.CHINESE to b.toggleZh, Script.JAPANESE to b.toggleJa, Script.KOREAN to b.toggleKo)
+
+    /** Add / remove a script; the last one cannot be removed (reject + block capsule). Saved at once (next capture). */
+    private fun onToggle(script: Script, toggle: LanguageToggleView) {
+        val current = Prefs.scripts(this)
+        val next = if (script in current) current - script else current + script
+        if (next.isEmpty()) {
+            toggle.reject()
+            showBlock()
+            return
+        }
+        Prefs.setScripts(this, next)
+        toggle.setChecked(script in next, animate = true)
+        hideBlock()                                      // msgOut at once
+        b.preview.setScripts(next, animate = true)
+        b.lanes.setScripts(next, animate = true)
+        crossFadeSpeed(next.size)                        // n always changes on a successful toggle
+    }
+
+    private fun showSpeed(n: Int) {
+        b.speedValue.setText(if (n == 1) R.string.speed_fast else R.string.speed_slower)
+        b.speedDesc.text = if (n == 1) getString(R.string.speed_desc_one) else getString(R.string.speed_desc_many, n)
+    }
+
+    /** hintCross 200: alpha -> 0, swap text, alpha -> 1. */
+    private fun crossFadeSpeed(n: Int) {
+        b.speedDesc.animate().alpha(0f).setDuration(HINT_CROSS)
+        b.speedValue.animate().alpha(0f).setDuration(HINT_CROSS).withEndAction {
+            showSpeed(n)
+            b.speedValue.animate().alpha(1f).setDuration(HINT_CROSS)
+            b.speedDesc.animate().alpha(1f).setDuration(HINT_CROSS)
+        }
+    }
+
+    /** msgIn 220 ease-out (alpha, translationY -8dp -> 0); resting text out 160; auto-hide at msgIn + blockHold 1500. */
+    private fun showBlock() {
+        main.removeCallbacks(autoHide)
+        b.noteBlock.animate().alpha(1f).translationY(0f).setDuration(MSG_IN).setInterpolator(EASE_OUT)
+        b.noteRest.animate().alpha(0f).setDuration(NOTE_FADE)
+        b.notice.requestRectangleOnScreen(Rect(0, 0, b.notice.width, b.notice.height))
+        main.postDelayed(autoHide, MSG_IN + BLOCK_HOLD)
+    }
+
+    /** msgOut 160 ease-in (alpha -> 0, translationY -> -8dp); resting text back. No-op when already hidden. */
+    private fun hideBlock() {
+        main.removeCallbacks(autoHide)
+        if (b.noteBlock.alpha == 0f && b.noteRest.alpha == 1f) return
+        b.noteBlock.animate().alpha(0f).translationY(-8 * d).setDuration(MSG_OUT).setInterpolator(EASE_IN)
+        b.noteRest.animate().alpha(1f).setDuration(NOTE_FADE)
+    }
 
     // ---- small drawables ----
     private fun round(color: Int, radiusPx: Float) = CssGradientDrawable.solid(color, radiusPx)
