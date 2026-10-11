@@ -59,6 +59,7 @@ class SessionActivity : AppCompatActivity() {
     private var startOrientation = Configuration.ORIENTATION_UNDEFINED
     private var closing = false
     private var ended = false
+    private val pendingShimmer = HashMap<PillView, Runnable>()   // tide-timed shimmer starts not yet fired
     private var ocrRunning = false
     private var actionMode: ActionMode? = null
 
@@ -252,6 +253,7 @@ class SessionActivity : AppCompatActivity() {
         actionMode?.finish()
         panel.close()
         translating = !translating
+        cancelShimmers()
         tide(translating)                       // first: sets each box's tide arrival time, which gates its shimmer
         if (translating) startRun()
         refreshButton()
@@ -278,7 +280,13 @@ class SessionActivity : AppCompatActivity() {
         val wait = tideAt[i] - SystemClock.uptimeMillis()
         if (shimmer && wait > 0L) {             // prism-tide: shimmer starts when the tide reaches the box
             pill.shimmering = false
-            pill.postDelayed({ if (translating && states[i] == ParagraphState.Translating) pill.shimmering = true }, wait)
+            pendingShimmer.remove(pill)?.let { pill.removeCallbacks(it) }
+            val r = Runnable {
+                pendingShimmer.remove(pill)
+                if (!ended && !closing && pill.isAttachedToWindow && translating && states[i] == ParagraphState.Translating) pill.shimmering = true
+            }
+            pendingShimmer[pill] = r
+            pill.postDelayed(r, wait)
         } else {
             pill.shimmering = shimmer
         }
@@ -435,9 +443,15 @@ class SessionActivity : AppCompatActivity() {
     }
 
     /** Exactly one session-ended callback to the service per activity instance; late translation results are dropped. */
+    private fun cancelShimmers() {
+        pendingShimmer.forEach { (pill, r) -> pill.removeCallbacks(r) }
+        pendingShimmer.clear()
+    }
+
     private fun endSession() {
         if (ended) return
         ended = true
+        cancelShimmers()
         runs.forEach { it.close() }           // translation spec §2/§5: model downloads keep running
         runs.clear()
         CaptureService.onSessionEnded()

@@ -50,12 +50,13 @@ object Translate {
     fun isOnWifi(ctx: Context): Boolean {
         val cm = ctx.getSystemService(ConnectivityManager::class.java) ?: return false
         val active = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
+        if (active.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) return false   // VPN over cellular lists both
         if (active.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) return true
         if (!active.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) return false
         return cm.allNetworks.any {
             val c = cm.getNetworkCapabilities(it)
             c != null && c.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) &&
-                c.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                c.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) &&
                 c.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
         }
     }
