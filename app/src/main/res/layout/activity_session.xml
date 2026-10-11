@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Capture session layers, bottom to top (spec §Architecture):
-     screenshot, scrim, pill container, edge glow, X, settings, hint. -->
+     screenshot, scrim, pill container, tide, edge glow, X, settings, translate, hint. -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/root"
     android:layout_width="match_parent"
@@ -27,6 +27,14 @@
         android:layout_height="match_parent"
         android:clipChildren="false"
         android:clipToPadding="false" />
+
+    <!-- translation tide band (prism-tide note 1): 220dp, swept top <-> bottom by SessionActivity -->
+    <View
+        android:id="@+id/tide"
+        android:layout_width="match_parent"
+        android:layout_height="220dp"
+        android:importantForAccessibility="no"
+        android:visibility="invisible" />
 
     <us.jhangy.textify.EdgeGlowView
         android:id="@+id/glow"
@@ -74,6 +82,48 @@
             android:layout_gravity="center"
             android:importantForAccessibility="no"
             android:src="@drawable/ic_session_settings" />
+    </FrameLayout>
+
+    <!-- translate button (translation spec §3, prism-tide #trBtn), left of settings. clipChildren=false: the
+         48dp busy ring and the on-state glow draw outside the 40dp circle. -->
+    <FrameLayout
+        android:id="@+id/trBtn"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="44dp"
+        android:layout_marginEnd="120dp"
+        android:background="@drawable/session_x_bg"
+        android:clickable="true"
+        android:clipChildren="false"
+        android:clipToPadding="false"
+        android:contentDescription="@string/session_translate"
+        android:elevation="4dp"
+        android:focusable="true">
+
+        <View
+            android:id="@+id/trOn"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:alpha="0"
+            android:importantForAccessibility="no" />
+
+        <ImageView
+            android:id="@+id/trIcon"
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:layout_gravity="center"
+            android:importantForAccessibility="no"
+            android:src="@drawable/ic_translate" />
+
+        <us.jhangy.textify.SpinnerRingView
+            android:id="@+id/trRing"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_gravity="center"
+            android:alpha="0"
+            android:importantForAccessibility="no"
+            android:visibility="invisible" />
     </FrameLayout>
 
     <LinearLayout

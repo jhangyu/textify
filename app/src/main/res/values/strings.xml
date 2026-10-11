@@ -87,4 +87,5 @@
     <string name="sheet_dl_sub">選一個語言開始下載，約 30MB</string>
     <string name="sheet_done">已下載</string>
     <string name="sheet_downloading">下載中</string>
+    <string name="session_translate">翻譯</string>
 </resources>
