@@ -18,7 +18,9 @@ Recognised paragraphs can also be translated on device (Google ML Kit translatio
    Dragging the bubble onto the bottom target ends the service.
 3. `SessionActivity` freezes the screen: the screenshot is shown 1:1 under hidden
    system bars with an edge glow while `Ocr` runs, then every recognised paragraph
-   becomes a pill. Tap a pill to copy the paragraph (the pill shines and flashes);
+   becomes a pill. Tap a pill to copy the paragraph (the pill shines and flashes; in
+   translation mode a tap copies the translation, and a truncated box opens a bottom
+   panel with original and translation instead);
    long-press for partial selection with the system copy menu. X or back closes
    the session and the bubble returns. The settings button next to X closes the
    session and opens `SettingsActivity`.

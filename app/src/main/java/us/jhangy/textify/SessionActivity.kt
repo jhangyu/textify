@@ -43,7 +43,7 @@ import kotlin.math.roundToLong
 
 /**
  * Frozen-screen capture session (a2 "Halo"). Screenshot 1:1 under hidden system bars, edge glow +
- * scrim while OCR runs, then one selectable pill per OCR paragraph. Tap pill = copy paragraph, long-press =
+ * scrim while OCR runs, then one selectable pill per OCR paragraph. Tap pill = copy paragraph (translation mode: copy the translation, or open the bottom panel if truncated), long-press =
  * system selection, X/back = closeOut fade, then CaptureService brings the bubble back.
  * Settings button = session fades out and SettingsActivity opens (bubble stays hidden).
  * Translate button (translation spec §3) = translated cards in place of the paragraphs, and back.
