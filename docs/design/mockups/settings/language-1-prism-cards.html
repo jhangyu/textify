@@ -1,0 +1,164 @@
+<!--
+Textify settings mockup :: language-1 :: Direction "Prism Cards"
+Concept: three tall frosted cards, one per OCR script, each led by a big native-glyph tile. Selecting a card floods it with the Halo lavender->pink wash and a soft glow; a three-segment "halo meter" below fills with each extra language and the speed copy changes. Deselecting the last card is refused with a sideways shake, a pink flash on its check and the a2 frosted capsule toast.
+
+PALETTE (hex): lavender #A78BFA, pink #F472B6, peach #FDBA74, aqua #67E8F9, periwinkle #818CF8, violet #7C3AED, plum #4C1D95, ink #1E1B4B, mist #FAF5FF, frost #FFFFFF
+Alphas: page/screen bg #FAF5FF; card surface #FFFFFF 72% + shadow #4C1D95 6% r10 y2; selected wash LinearGradient 135deg #A78BFA 22% -> #F472B6 16% (same family as a2 box pill 20%/16%); selected glow #A78BFA 38% r24; glyph tile off #7C3AED 7%, on #FFFFFF 86%; check off #7C3AED 8%, on LinearGradient #7C3AED -> #F472B6; reject flash #F472B6 55%; meter track #7C3AED 8%, meter fill LinearGradient #A78BFA -> #F472B6 -> #FDBA74; toast surface #FFFFFF 94% + glow #A78BFA 28% r16; touch dot (demo only) #7C3AED 18%.
+
+TIMINGS (ms)
+  Fades / motion (all <= 400): selectFill 240 (wash + glow alpha), checkPop 200 (scale .6 -> 1, overshoot), glyphTint 240, hintCross 200 (speed copy cross-fade), meterGrow 300 (segment fill, easeOut), rejectShake 360 (translateX 0,-8,7,-5,3,0 dp), rejectFlash 380 (check tint pink -> back, = a2 flash), toastIn 220, toastOut 160, touchDot 300 (demo only)
+  Not fades: toastHold 1500 (hold), demoStep 1100 (demo cadence only, not product)
+
+NATIVE NOTES: Screen = ScrollView > LinearLayout of 3 custom LanguageCardView (FrameLayout). Card surface = GradientDrawable (cornerRadius 28dp, #FFFFFF@72%); selected wash = second GradientDrawable layer (LinearGradient orientation TL_BR) whose alpha is animated by ObjectAnimator 240ms. Glow = Paint.setShadowLayer(24dp,0,0,#A78BFA@38%) on a View drawn outside clip (clipChildren=false), HW from API 28; API 26-27: skip glow, keep wash. Check = VectorDrawable (circle + check path) with scaleX/Y animator + OvershootInterpolator. Shake = ObjectAnimator translationX keyframes 360ms + performHapticFeedback(REJECT) API 30+, VIRTUAL_KEY on 26-29. Meter = 3 Views with LinearGradient shader, scaleX animator pivot 0. Toast = in-window capsule View (not android.widget.Toast) so it can carry the Halo surface. No RenderEffect needed here, identical look on API 26-30. Selection persisted as a Set<Script> in SharedPreferences; guard "size == 1 && contains(tapped)" rejects.
+-->
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Textify 辨識語言 · Prism Cards</title>
+<style>
+:root{--lav:#A78BFA;--pink:#F472B6;--peach:#FDBA74;--aqua:#67E8F9;--peri:#818CF8;--violet:#7C3AED;--plum:#4C1D95;--ink:#1E1B4B;--mist:#FAF5FF;--frost:#FFFFFF;
+--ui:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{min-height:100%}
+body{font-family:var(--ui);background:radial-gradient(1100px 760px at 72% 18%,#FFFFFF 0,#FAF5FF 55%,#F1EBFF 100%);color:var(--ink);min-height:100vh;display:flex;align-items:center;justify-content:center;gap:48px;padding:24px;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+.panel{width:280px;display:flex;flex-direction:column;gap:14px}
+.kicker{font-size:11px;letter-spacing:.14em;color:var(--violet);font-weight:600}
+.panel h1{font-size:30px;line-height:1.08;font-weight:700;letter-spacing:-.01em}
+.panel p{font-size:13.5px;line-height:1.6;color:rgba(30,27,75,.78)}
+.replay{align-self:flex-start;padding:11px 22px;border-radius:999px;background:linear-gradient(135deg,var(--violet),var(--pink));color:#fff;font-weight:600;box-shadow:0 8px 22px rgba(124,58,237,.28);transition:transform .15s ease-out}
+.replay:active{transform:scale(.96)}
+.phone{width:412px;height:915px;flex:none;border-radius:46px;padding:10px;background:linear-gradient(160deg,#FFFFFF,#ECE4FB);box-shadow:0 30px 80px rgba(76,29,149,.16)}
+.screen{position:relative;width:100%;height:100%;border-radius:36px;overflow:hidden;background:var(--mist);user-select:none;-webkit-user-select:none}
+.screen::before{content:"";position:absolute;inset:-30% -30% auto auto;width:360px;height:360px;border-radius:50%;background:radial-gradient(circle,rgba(167,139,250,.22),rgba(244,114,182,.10) 45%,transparent 70%);pointer-events:none}
+.sb{position:relative;height:34px;display:flex;align-items:center;justify-content:space-between;padding:6px 26px 0;font-size:14px;font-weight:500}
+.ab{position:relative;height:60px;display:flex;align-items:center;gap:6px;padding:0 8px}
+.ab .back{width:48px;height:48px;border-radius:50%;display:grid;place-items:center}
+.ab .back:active{background:rgba(124,58,237,.08)}
+.ab h2{font-size:20px;font-weight:700}
+.content{position:relative;padding:6px 20px 0;display:flex;flex-direction:column;gap:14px}
+.lede{font-size:14.5px;line-height:1.6;color:rgba(30,27,75,.72);padding:0 4px 4px}
+.card{position:relative;display:flex;align-items:center;gap:16px;padding:18px 18px 18px 16px;min-height:104px;border-radius:28px;background:rgba(255,255,255,.72);box-shadow:0 2px 10px rgba(76,29,149,.06);text-align:left;width:100%}
+.card::before,.card::after{content:"";position:absolute;inset:0;border-radius:inherit;opacity:0;transition:opacity 240ms ease-out;pointer-events:none}
+.card::before{background:linear-gradient(135deg,rgba(167,139,250,.22),rgba(244,114,182,.16))}
+.card::after{box-shadow:0 0 24px rgba(167,139,250,.38)}
+.card.on::before,.card.on::after{opacity:1}
+.card>*{position:relative}
+.tile{width:68px;height:68px;flex:none;border-radius:22px;display:grid;place-items:center;background:rgba(124,58,237,.07);transition:background 240ms ease-out}
+.card.on .tile{background:rgba(255,255,255,.86)}
+.glyph{white-space:nowrap;font-size:19px;font-weight:800;line-height:1;letter-spacing:-.02em;color:rgba(30,27,75,.55);transition:color 240ms ease-out}
+.card.on .glyph{background:linear-gradient(135deg,var(--violet),var(--pink));-webkit-background-clip:text;background-clip:text;color:transparent}
+.glyph small{display:block;text-align:center;font-size:11px;font-weight:700;letter-spacing:.08em;margin-top:4px}
+.txt{flex:1;min-width:0}
+.txt b{display:block;font-size:18px;font-weight:700}
+.txt span{display:block;font-size:13px;color:rgba(30,27,75,.62);margin-top:3px;line-height:1.45}
+.chk{width:30px;height:30px;flex:none;border-radius:50%;background:rgba(124,58,237,.08);display:grid;place-items:center;transition:background 240ms}
+.chk svg{transform:scale(.6);opacity:0;transition:transform 200ms cubic-bezier(.34,1.56,.64,1),opacity 200ms}
+.card.on .chk{background:linear-gradient(135deg,var(--violet),var(--pink))}
+.card.on .chk svg{transform:scale(1);opacity:1}
+.card.reject{animation:shake 360ms ease-out}
+.card.reject .chk{animation:flash 380ms ease-out}
+@keyframes shake{0%,100%{transform:none}20%{transform:translateX(-8px)}40%{transform:translateX(7px)}60%{transform:translateX(-5px)}80%{transform:translateX(3px)}}
+@keyframes flash{0%,100%{box-shadow:none}35%{box-shadow:0 0 0 7px rgba(244,114,182,.55)}}
+.meter{margin-top:6px;padding:18px;border-radius:24px;background:rgba(255,255,255,.6)}
+.mh{display:flex;align-items:baseline;justify-content:space-between}
+.mh b{font-size:13px;font-weight:600;color:rgba(30,27,75,.62)}
+.mh .val{font-size:18px;font-weight:800;color:var(--plum);transition:opacity 200ms}
+.segs{display:flex;gap:6px;margin:12px 0 10px}
+.seg{flex:1;height:10px;border-radius:5px;background:rgba(124,58,237,.08);overflow:hidden}
+.seg i{display:block;height:100%;transform:scaleX(0);transform-origin:left;transition:transform 300ms cubic-bezier(.2,.8,.2,1)}
+.seg:nth-child(1) i{background:linear-gradient(90deg,var(--lav),#C084FC)}
+.seg:nth-child(2) i{background:linear-gradient(90deg,#C084FC,var(--pink))}
+.seg:nth-child(3) i{background:linear-gradient(90deg,var(--pink),var(--peach))}
+.seg.on i{transform:scaleX(1)}
+.mdesc{font-size:13px;line-height:1.55;color:rgba(30,27,75,.7);transition:opacity 200ms}
+.fade{opacity:0}
+.foot{font-size:12.5px;color:rgba(30,27,75,.5);text-align:center;padding-top:6px}
+.toast{position:absolute;left:50%;bottom:64px;display:flex;align-items:center;gap:10px;padding:12px 20px 12px 14px;border-radius:999px;background:rgba(255,255,255,.94);box-shadow:0 0 16px rgba(167,139,250,.28),0 8px 24px rgba(76,29,149,.12);font-size:14px;font-weight:600;white-space:nowrap;opacity:0;transform:translate(-50%,12px);transition:opacity 160ms ease-in,transform 160ms ease-in;pointer-events:none}
+.toast.show{opacity:1;transform:translate(-50%,0);transition:opacity 220ms ease-out,transform 220ms ease-out}
+.toast .ic{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg,var(--pink),var(--peach))}
+.touch{position:absolute;width:44px;height:44px;margin:-22px 0 0 -22px;border-radius:50%;background:rgba(124,58,237,.18);opacity:0;pointer-events:none}
+.touch.go{animation:touch 300ms ease-out}
+@keyframes touch{0%{opacity:0;transform:scale(.5)}40%{opacity:1}100%{opacity:0;transform:scale(1.3)}}
+@media (prefers-reduced-motion:reduce){*{animation-duration:1ms!important;transition-duration:1ms!important}}
+</style>
+</head>
+<body>
+<aside class="panel">
+  <div class="kicker">TEXTIFY · 辨識語言 · 方案 1</div>
+  <h1>Prism Cards</h1>
+  <p>每種文字一張霧面卡片，選取時灌入 Halo 薰衣草→粉紅光暈。下方三段光條隨語言數量填滿，提示辨識會變慢。取消最後一種語言時卡片左右搖晃並跳出提示。</p>
+  <p>可直接點卡片操作；「重播」會自動示範：加選日文、韓文，再逐一取消，最後嘗試取消中文被擋下。</p>
+  <button class="replay" id="replay">重播示範</button>
+</aside>
+<div class="phone"><div class="screen" id="screen">
+  <div class="sb"><span>9:41</span><svg width="58" height="14" viewBox="0 0 58 14" fill="#1E1B4B"><path d="M2 12h3v-3H2zM7 12h3V7H7zM12 12h3V4h-3zM17 12h3V1h-3z"/><path d="M30 4.5a9 9 0 0 1 12 0l-1.5 1.6a6.8 6.8 0 0 0-9 0zM33 7.7a4.6 4.6 0 0 1 6 0L36 11z"/><rect x="45" y="2" width="11" height="10" rx="2.5"/></svg></div>
+  <div class="ab"><button class="back" aria-label="返回"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#1E1B4B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button><h2>辨識語言</h2></div>
+  <div class="content">
+    <p class="lede">選擇畫面上可能出現的文字。可以複選，至少要保留一種。</p>
+    <button class="card" data-k="zh" role="checkbox" aria-checked="true"><div class="tile"><div class="glyph" style="font-size:26px">中文<small>ABC</small></div></div><div class="txt"><b>中文（含英文）</b><span>繁體、簡體，以及英文、數字等拉丁字母</span></div><div class="chk"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div></button>
+    <button class="card" data-k="ja" role="checkbox" aria-checked="false"><div class="tile"><div class="glyph">日本語</div></div><div class="txt"><b>日文</b><span>平假名、片假名與漢字</span></div><div class="chk"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div></button>
+    <button class="card" data-k="ko" role="checkbox" aria-checked="false"><div class="tile"><div class="glyph">한국어</div></div><div class="txt"><b>韓文</b><span>韓文字母（諺文）</span></div><div class="chk"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div></button>
+    <div class="meter" aria-live="polite">
+      <div class="mh"><b>辨識速度</b><span class="val" id="val">最快</span></div>
+      <div class="segs"><div class="seg"><i></i></div><div class="seg"><i></i></div><div class="seg"><i></i></div></div>
+      <p class="mdesc" id="desc">只跑 1 個辨識模型，擷取後最快出現結果。</p>
+    </div>
+    <p class="foot">設定會在下一次擷取時生效</p>
+  </div>
+  <div class="toast" id="toast" role="status"><span class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></span>至少要保留一種辨識語言</div>
+  <div class="touch" id="touch"></div>
+</div></div>
+<script>
+const state={zh:true,ja:false,ko:false};
+const HINT=[null,
+  ['最快','只跑 1 個辨識模型，擷取後最快出現結果。'],
+  ['稍慢','同一張截圖要跑 2 個辨識模型，等待時間約 2 倍。'],
+  ['較慢','同一張截圖要跑 3 個辨識模型，等待時間約 3 倍。']];
+const $=s=>document.querySelector(s);
+const cards=[...document.querySelectorAll('.card')];
+const segs=[...document.querySelectorAll('.seg')];
+let lastN=0,toastT=0,timers=[];
+function count(){return Object.values(state).filter(Boolean).length}
+function render(){
+  cards.forEach(c=>{const on=state[c.dataset.k];c.classList.toggle('on',on);c.setAttribute('aria-checked',on)});
+  const n=count();
+  segs.forEach((s,i)=>s.classList.toggle('on',i<n));
+  if(n!==lastN){
+    const v=$('#val'),d=$('#desc');
+    v.classList.add('fade');d.classList.add('fade');
+    setTimeout(()=>{v.textContent=HINT[n][0];d.textContent=HINT[n][1];v.classList.remove('fade');d.classList.remove('fade')},lastN?200:0);
+    lastN=n;
+  }
+}
+function reject(c){
+  c.classList.remove('reject');void c.offsetWidth;c.classList.add('reject');
+  const t=$('#toast');t.classList.add('show');clearTimeout(toastT);
+  toastT=setTimeout(()=>t.classList.remove('show'),220+1500);
+}
+function toggle(c){
+  const k=c.dataset.k;
+  if(state[k]&&count()===1){reject(c);return}
+  state[k]=!state[k];render();
+}
+function tapDot(el){
+  const r=el.getBoundingClientRect(),s=$('#screen').getBoundingClientRect(),d=$('#touch');
+  d.style.left=(r.right-s.left-34)+'px';d.style.top=(r.top-s.top+r.height/2)+'px';
+  d.classList.remove('go');void d.offsetWidth;d.classList.add('go');
+}
+cards.forEach(c=>c.addEventListener('click',e=>{if(e.isTrusted)stop();toggle(c)}));
+function stop(){timers.forEach(clearTimeout);timers=[]}
+function replay(){
+  stop();state.zh=true;state.ja=false;state.ko=false;
+  cards.forEach(c=>c.classList.remove('reject'));$('#toast').classList.remove('show');
+  render();
+  const seq=['ja','ko','ko','ja','zh','zh'];
+  seq.forEach((k,i)=>timers.push(setTimeout(()=>{const c=cards.find(x=>x.dataset.k===k);tapDot(c);toggle(c)},900+i*1100)));
+}
+$('#replay').addEventListener('click',replay);
+render();replay();
+</script>
+</body>
+</html>

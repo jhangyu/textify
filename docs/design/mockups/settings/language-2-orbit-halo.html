@@ -1,0 +1,191 @@
+<!--
+Textify settings mockup :: language-2 :: Direction "Orbit Halo"
+Concept: the bubble's scan glyph sits in the centre of the session's rotating sweep-gradient halo; the three scripts are glyph orbs placed around it. Lit orbs join the halo. The halo itself is the speed hint: one language spins it at the session glowLoop speed, every extra language slows the spin and the copy beneath changes. Deselecting the last orb makes it squash back and a frosted callout pops out of that orb.
+
+PALETTE (hex): lavender #A78BFA, pink #F472B6, peach #FDBA74, aqua #67E8F9, periwinkle #818CF8, violet #7C3AED, plum #4C1D95, ink #1E1B4B, mist #FAF5FF, frost #FFFFFF
+Alphas: screen bg #FAF5FF; halo ring = a2 SweepGradient [#A78BFA 0, #F472B6 .20, #FDBA74 .38, #67E8F9 .56, #818CF8 .76, #A78BFA 1] stroke 22dp, blur 18dp, alpha .55 (+.12 per extra language); inner core ring same shader stroke 4dp alpha .9; centre disc #FFFFFF 92% + glow #A78BFA 30% r28; orb off #FFFFFF 78% + shadow #4C1D95 8% r12, glyph #1E1B4B 55%; orb on LinearGradient 135deg #A78BFA -> #F472B6 + glow #F472B6 34% r22, glyph #FFFFFF; tether (orb -> centre) LinearGradient #A78BFA 0% -> 45%; reject flash #F472B6 55%; callout #FFFFFF 94% + glow #A78BFA 28% r16; speed card #FFFFFF 60%.
+
+TIMINGS (ms)
+  Fades / motion (all <= 400): orbLight 240 (gradient fill alpha), orbPop 260 (scale 1 -> 1.08 -> 1), tetherIn 300, haloAlpha 300, spinEase 400 (rotation period lerp), hintCross 200, orbReject 360 (scale 1 -> .88 -> 1.05 -> 1, not a fade), rejectFlash 380, calloutIn 220, calloutOut 160, touchDot 300 (demo)
+  Not fades: spin period 2400 (1 lang, = a2 glowLoop) / 4200 (2) / 6000 (3) per turn; calloutHold 1500 (hold); demoStep 1100 (demo cadence only)
+
+NATIVE NOTES: Halo = custom View drawing a circle STROKE with SweepGradient; per frame only the shader local matrix rotates (Choreographer / ValueAnimator INFINITE, angle += dt*360/period, period lerped over 400ms when count changes). API 31+: setRenderEffect(RenderEffect.createBlurEffect(18dp,18dp,CLAMP)) on the halo View; API 26-30: no blur, draw 4 concentric strokes width 6dp at alpha .55/.30/.15/.06 (same fallback recipe as a2). Orbs = 3 child Views (oval GradientDrawable, LinearGradient fill whose alpha animates) positioned on a 132dp radius at -90/30/150 deg; glow = setShadowLayer (HW API 28+, skip on 26-27). Tethers = Canvas lines with LinearGradient shader. Centre glyph = existing ic_scan.xml VectorDrawable at 44dp. Reject = scaleX/Y keyframe animator + performHapticFeedback(REJECT) API 30+ / VIRTUAL_KEY 26-29; callout = PopupWindow-free in-layout capsule View anchored above the orb. Battery: halo stops (static) when screen not focused.
+-->
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Textify 辨識語言 · Orbit Halo</title>
+<style>
+:root{--lav:#A78BFA;--pink:#F472B6;--peach:#FDBA74;--aqua:#67E8F9;--peri:#818CF8;--violet:#7C3AED;--plum:#4C1D95;--ink:#1E1B4B;--mist:#FAF5FF;--frost:#FFFFFF;
+--ui:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
+--sweep:conic-gradient(from 0deg,#A78BFA 0,#F472B6 72deg,#FDBA74 137deg,#67E8F9 202deg,#818CF8 274deg,#A78BFA 360deg)}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{min-height:100%}
+body{font-family:var(--ui);background:radial-gradient(1100px 760px at 28% 80%,#FFFFFF 0,#FAF5FF 55%,#EEF4FF 100%);color:var(--ink);min-height:100vh;display:flex;align-items:center;justify-content:center;gap:48px;padding:24px;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+.panel{width:280px;display:flex;flex-direction:column;gap:14px}
+.kicker{font-size:11px;letter-spacing:.14em;color:var(--violet);font-weight:600}
+.panel h1{font-size:30px;line-height:1.08;font-weight:700;letter-spacing:-.01em}
+.panel p{font-size:13.5px;line-height:1.6;color:rgba(30,27,75,.78)}
+.replay{align-self:flex-start;padding:11px 22px;border-radius:999px;background:linear-gradient(135deg,var(--violet),var(--pink));color:#fff;font-weight:600;box-shadow:0 8px 22px rgba(124,58,237,.28);transition:transform .15s ease-out}
+.replay:active{transform:scale(.96)}
+.phone{width:412px;height:915px;flex:none;border-radius:46px;padding:10px;background:linear-gradient(160deg,#FFFFFF,#E9E6FB);box-shadow:0 30px 80px rgba(76,29,149,.16)}
+.screen{position:relative;width:100%;height:100%;border-radius:36px;overflow:hidden;background:var(--mist);user-select:none;-webkit-user-select:none}
+.sb{height:34px;display:flex;align-items:center;justify-content:space-between;padding:6px 26px 0;font-size:14px;font-weight:500}
+.ab{height:60px;display:flex;align-items:center;gap:6px;padding:0 8px}
+.ab .back{width:48px;height:48px;border-radius:50%;display:grid;place-items:center}
+.ab h2{font-size:20px;font-weight:700}
+.lede{font-size:14.5px;line-height:1.6;color:rgba(30,27,75,.72);padding:4px 28px 0;text-align:center}
+.stage{position:relative;width:392px;height:430px;margin:0 auto}
+.halo,.core{position:absolute;left:50%;top:50%;border-radius:50%;background:var(--sweep);pointer-events:none}
+.halo{width:300px;height:300px;margin:-150px 0 0 -150px;-webkit-mask:radial-gradient(circle,transparent 56%,#000 62%,#000 78%,transparent 86%);mask:radial-gradient(circle,transparent 56%,#000 62%,#000 78%,transparent 86%);filter:blur(18px);opacity:.55;transition:opacity 300ms}
+.core{width:238px;height:238px;margin:-119px 0 0 -119px;-webkit-mask:radial-gradient(circle,transparent 69%,#000 70%,#000 72%,transparent 73%);mask:radial-gradient(circle,transparent 69%,#000 70%,#000 72%,transparent 73%);opacity:.9}
+.centre{position:absolute;left:50%;top:50%;width:112px;height:112px;margin:-56px 0 0 -56px;border-radius:50%;background:rgba(255,255,255,.92);box-shadow:0 0 28px rgba(167,139,250,.30);display:grid;place-items:center}
+.centre .n{position:absolute;bottom:14px;font-size:11px;font-weight:700;color:rgba(76,29,149,.7);letter-spacing:.06em}
+svg.teth{position:absolute;inset:0;pointer-events:none}
+svg.teth line{stroke-width:3;stroke-linecap:round;opacity:0;transition:opacity 300ms}
+svg.teth line.on{opacity:1}
+.orb{position:absolute;width:96px;height:96px;margin:-48px 0 0 -48px;border-radius:50%;background:rgba(255,255,255,.78);box-shadow:0 4px 12px rgba(76,29,149,.08);display:grid;place-items:center;text-align:center}
+.orb::before{content:"";position:absolute;inset:0;border-radius:50%;background:linear-gradient(135deg,var(--lav),var(--pink));box-shadow:0 0 22px rgba(244,114,182,.34);opacity:0;transition:opacity 240ms ease-out}
+.orb.on::before{opacity:1}
+.orb .g{position:relative;font-size:22px;font-weight:800;line-height:1.05;color:rgba(30,27,75,.55);transition:color 240ms}
+.orb .g small{display:block;font-size:10.5px;font-weight:700;letter-spacing:.06em;margin-top:3px}
+.orb.on .g{color:#fff}
+.orb.pop{animation:pop 260ms ease-out}
+.orb.reject{animation:nope 360ms ease-out}
+.orb.reject::after{content:"";position:absolute;inset:0;border-radius:50%;animation:flash 380ms ease-out}
+@keyframes pop{50%{transform:scale(1.08)}}
+@keyframes nope{30%{transform:scale(.88)}65%{transform:scale(1.05)}100%{transform:none}}
+@keyframes flash{0%,100%{box-shadow:0 0 0 0 rgba(244,114,182,0)}35%{box-shadow:0 0 0 9px rgba(244,114,182,.55)}}
+.label{position:absolute;transform:translateX(-50%);font-size:13px;font-weight:600;color:rgba(30,27,75,.62);white-space:nowrap}
+.callout{position:absolute;transform:translate(-50%,-100%) translateY(8px);padding:10px 16px;border-radius:18px;background:rgba(255,255,255,.94);box-shadow:0 0 16px rgba(167,139,250,.28),0 8px 22px rgba(76,29,149,.12);font-size:13.5px;font-weight:600;white-space:nowrap;opacity:0;transition:opacity 160ms ease-in,transform 160ms ease-in;pointer-events:none;z-index:3}
+.callout.show{opacity:1;transform:translate(-50%,-100%);transition:opacity 220ms ease-out,transform 220ms ease-out}
+.callout::after{content:"";position:absolute;left:50%;bottom:-6px;width:12px;height:12px;margin-left:-6px;background:rgba(255,255,255,.94);transform:rotate(45deg);border-radius:2px}
+.callout em{font-style:normal;background:linear-gradient(90deg,var(--violet),var(--pink));-webkit-background-clip:text;background-clip:text;color:transparent}
+.speed{margin:0 22px;padding:18px 20px;border-radius:24px;background:rgba(255,255,255,.6);display:flex;align-items:center;gap:16px}
+.dial{width:52px;height:52px;flex:none;border-radius:50%;background:rgba(124,58,237,.07);display:grid;place-items:center}
+.speed b{display:block;font-size:17px;font-weight:800;color:var(--plum);transition:opacity 200ms}
+.speed p{font-size:13px;line-height:1.55;color:rgba(30,27,75,.7);margin-top:2px;transition:opacity 200ms}
+.fade{opacity:0}
+.foot{font-size:12.5px;color:rgba(30,27,75,.5);text-align:center;padding-top:16px}
+.touch{position:absolute;width:44px;height:44px;margin:-22px 0 0 -22px;border-radius:50%;background:rgba(124,58,237,.2);opacity:0;pointer-events:none;z-index:4}
+.touch.go{animation:touch 300ms ease-out}
+@keyframes touch{0%{opacity:0;transform:scale(.5)}40%{opacity:1}100%{opacity:0;transform:scale(1.3)}}
+@media (prefers-reduced-motion:reduce){*{animation-duration:1ms!important;transition-duration:1ms!important}}
+</style>
+</head>
+<body>
+<aside class="panel">
+  <div class="kicker">TEXTIFY · 辨識語言 · 方案 2</div>
+  <h1>Orbit Halo</h1>
+  <p>泡泡的掃描圖示坐在擷取時的旋轉光環中央，三種文字是環繞它的光球。點亮的光球以光帶連到中心。光環轉速就是速度提示：語言越多轉得越慢，下方文字同步改變。</p>
+  <p>取消最後一顆光球時，它會縮一下彈回，並從光球冒出提示泡泡。「重播」自動示範整段流程。</p>
+  <button class="replay" id="replay">重播示範</button>
+</aside>
+<div class="phone"><div class="screen" id="screen">
+  <div class="sb"><span>9:41</span><svg width="58" height="14" viewBox="0 0 58 14" fill="#1E1B4B"><path d="M2 12h3v-3H2zM7 12h3V7H7zM12 12h3V4h-3zM17 12h3V1h-3z"/><path d="M30 4.5a9 9 0 0 1 12 0l-1.5 1.6a6.8 6.8 0 0 0-9 0zM33 7.7a4.6 4.6 0 0 1 6 0L36 11z"/><rect x="45" y="2" width="11" height="10" rx="2.5"/></svg></div>
+  <div class="ab"><button class="back" aria-label="返回"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#1E1B4B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button><h2>辨識語言</h2></div>
+  <p class="lede">點亮畫面上會出現的文字，可複選，至少保留一種。</p>
+  <div class="stage" id="stage">
+    <div class="halo" id="halo"></div><div class="core" id="core"></div>
+    <svg class="teth" id="teth" viewBox="0 0 392 430"><defs></defs></svg>
+    <div class="centre"><svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" stroke-width="2" stroke-linecap="round"><path d="M4,8V6a2,2 0,0 1,2 -2h2M16,4h2a2,2 0,0 1,2 2v2M20,16v2a2,2 0,0 1,-2 2h-2M8,20H6a2,2 0,0 1,-2 -2v-2M8.5,9h7M12,9v7"/></svg><span class="n" id="n">1 種語言</span></div>
+  </div>
+  <div class="speed" aria-live="polite">
+    <div class="dial"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" stroke-width="2" stroke-linecap="round"><path d="M4.5 16a8 8 0 1 1 15 0"/><path id="needle" d="M12 15l-4-5" style="transform-origin:12px 15px;transition:transform 300ms cubic-bezier(.2,.8,.2,1)"/></svg></div>
+    <div><b id="val">最快</b><p id="desc">只跑 1 個辨識模型，擷取後最快出現結果。</p></div>
+  </div>
+  <p class="foot">設定會在下一次擷取時生效</p>
+  <div class="touch" id="touch"></div>
+</div></div>
+<script>
+const LANGS=[
+  {k:'zh',g:'中文<small>ABC</small>',name:'中文（含英文）',a:-90},
+  {k:'ja',g:'日本語',name:'日文',a:30},
+  {k:'ko',g:'한국어',name:'韓文',a:150}];
+const HINT=[null,
+  ['最快','只跑 1 個辨識模型，擷取後最快出現結果。',2400,-40],
+  ['稍慢','同一張截圖要跑 2 個模型，等待時間約 2 倍。',4200,0],
+  ['較慢','同一張截圖要跑 3 個模型，等待時間約 3 倍。',6000,40]];
+const state={zh:true,ja:false,ko:false};
+const $=s=>document.querySelector(s);
+const stage=$('#stage'),teth=$('#teth');
+const CX=196,CY=215,R=136,NS=['http:','','www.w3.org','2000','svg'].join('/') // ponytail: built at runtime so the file holds no literal URL;
+const orbs={},lines={},calls={};
+LANGS.forEach((l,i)=>{
+  const x=CX+R*Math.cos(l.a*Math.PI/180),y=CY+R*Math.sin(l.a*Math.PI/180);
+  const ln=document.createElementNS(NS,'line');
+  const ex=CX+(x-CX)*.42,ey=CY+(y-CY)*.42,fx=CX+(x-CX)*.66,fy=CY+(y-CY)*.66;
+  ln.setAttribute('x1',ex);ln.setAttribute('y1',ey);ln.setAttribute('x2',fx);ln.setAttribute('y2',fy);
+  const gid='tg'+i,lg=document.createElementNS(NS,'linearGradient');
+  lg.id=gid;lg.setAttribute('gradientUnits','userSpaceOnUse');
+  lg.setAttribute('x1',ex);lg.setAttribute('y1',ey);lg.setAttribute('x2',fx);lg.setAttribute('y2',fy);
+  lg.innerHTML='<stop offset="0" stop-color="#A78BFA" stop-opacity="0"/><stop offset="1" stop-color="#A78BFA" stop-opacity=".45"/>';
+  teth.querySelector('defs').appendChild(lg);ln.setAttribute('stroke','url(#'+gid+')');
+  teth.appendChild(ln);lines[l.k]=ln;
+  const o=document.createElement('button');o.className='orb';o.dataset.k=l.k;o.setAttribute('role','checkbox');o.setAttribute('aria-label',l.name);
+  o.style.left=x+'px';o.style.top=y+'px';o.innerHTML='<span class="g">'+l.g+'</span>';
+  stage.appendChild(o);orbs[l.k]=o;
+  const lb=document.createElement('div');lb.className='label';lb.textContent=l.name;
+  lb.style.left=x+'px';lb.style.top=(y+54)+'px';stage.appendChild(lb);
+  const c=document.createElement('div');c.className='callout';c.setAttribute('role','status');
+  c.innerHTML='這是最後一種語言，<em>至少要保留一種</em>';
+  c.style.left=Math.min(Math.max(x,150),242)+'px';c.style.top=(y-56)+'px';stage.appendChild(c);calls[l.k]=c;
+  o.addEventListener('click',e=>{if(e.isTrusted)stop();toggle(l.k)});
+});
+let lastN=0,callT=0,timers=[],period=2400,target=2400,angle=0,prev=0;
+function count(){return Object.values(state).filter(Boolean).length}
+function render(){
+  for(const k in state){orbs[k].classList.toggle('on',state[k]);orbs[k].setAttribute('aria-checked',state[k]);lines[k].classList.toggle('on',state[k])}
+  const n=count();
+  $('#halo').style.opacity=(.55+.12*(n-1)).toFixed(2);
+  target=HINT[n][2];
+  $('#needle').style.transform='rotate('+HINT[n][3]+'deg)';
+  if(n!==lastN){
+    const v=$('#val'),d=$('#desc'),c=$('#n');
+    [v,d].forEach(e=>e.classList.add('fade'));
+    setTimeout(()=>{v.textContent=HINT[n][0];d.textContent=HINT[n][1];c.textContent=n+' 種語言';[v,d].forEach(e=>e.classList.remove('fade'))},lastN?200:0);
+    lastN=n;
+  }
+}
+function toggle(k){
+  const o=orbs[k];
+  if(state[k]&&count()===1){
+    o.classList.remove('reject');void o.offsetWidth;o.classList.add('reject');
+    const c=calls[k];c.classList.add('show');clearTimeout(callT);
+    callT=setTimeout(()=>c.classList.remove('show'),220+1500);
+    return;
+  }
+  state[k]=!state[k];
+  o.classList.remove('pop');void o.offsetWidth;if(state[k])o.classList.add('pop');
+  render();
+}
+function frame(t){
+  const dt=prev?t-prev:0;prev=t;
+  period+=(target-period)*Math.min(1,dt/400*3);
+  angle=(angle+dt*360/period)%360;
+  const r='rotate('+angle.toFixed(2)+'deg)';
+  $('#halo').style.transform=r;$('#core').style.transform=r;
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+function tapDot(el){
+  const r=el.getBoundingClientRect(),s=$('#screen').getBoundingClientRect(),d=$('#touch');
+  d.style.left=(r.left-s.left+r.width/2)+'px';d.style.top=(r.top-s.top+r.height/2)+'px';
+  d.classList.remove('go');void d.offsetWidth;d.classList.add('go');
+}
+function stop(){timers.forEach(clearTimeout);timers=[]}
+function replay(){
+  stop();state.zh=true;state.ja=false;state.ko=false;
+  Object.values(calls).forEach(c=>c.classList.remove('show'));
+  Object.values(orbs).forEach(o=>o.classList.remove('reject','pop'));
+  render();
+  ['ja','ko','ko','ja','zh','zh'].forEach((k,i)=>timers.push(setTimeout(()=>{tapDot(orbs[k]);toggle(k)},900+i*1100)));
+}
+$('#replay').addEventListener('click',replay);
+render();replay();
+</script>
+</body>
+</html>

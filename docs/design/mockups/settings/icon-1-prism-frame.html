@@ -1,0 +1,317 @@
+<!--
+Textify icon mockup 1 :: Direction "稜光取景 Prism Frame"
+Concept: keep the scan glyph as a line drawing, but the four corner brackets carry the Halo spectrum (lavender -> pink -> peach -> aqua) as a gradient stroke, the "T" stays solid violet; the icon sits on a misty field with soft corner glows, like the session's residual halo.
+
+PALETTE (hex, alpha): lavender #A78BFA, pink #F472B6, peach #FDBA74, aqua #67E8F9, violet #7C3AED, plum #4C1D95, ink #1E1B4B, mist #FAF5FF, frost #FFFFFF
+  Bracket gradient stops: #A78BFA 0, #F472B6 .35, #FDBA74 .65, #67E8F9 1
+  Background glows: lavender @30% (top-left), pink @24% (top-right), peach @26% (bottom-right), aqua @26% (bottom-left), white core @95% -> 0
+  Android #AARRGGBB: @30% = 4D, @24% = 3D, @26% = 42, @95% = F2
+  Themed icon tones (system-derived, NOT set by app; shown for preview): background #EADDFF, glyph #4C1D95
+  Notification header circle colour (NotificationCompat.setColor): #7C3AED
+
+TIMINGS (ms) — every fade <= 400
+  maskX 300 (mask crossfade in demo), sceneX 300, tap ripple 400, bubbleIn 300 (existing a2 value), shadeIn 350 (system, demo only)
+  Glyph entrance (bubble glyph on bubbleIn, also usable as launch splash): each bracket 320 easeOut-back cubic-bezier(.2,0,0,1.25), slides in 3 units (24-viewport) from its own corner, stagger 40 (b1..b4 = 0/40/80/120); T: fade + scale .8->1, 220, delay 160. Total 440.
+  Demo replay: masks circle 0 -> squircle 900 -> rounded square 1800 -> themed 2700 -> circle 3800 -> tap 4400 -> app 4700 -> bubble 5000 -> glyph 5300 -> shade 7200
+
+VECTOR DATA (all strokes round cap + round join; SVG gradients are userSpaceOnUse = VectorDrawable viewport coords)
+  ic_launcher_background.xml  viewport 108x108
+    path M0,0h108v108h-108z fill #FAF5FF
+    path M0,0h108v108h-108z fill radial(center 8,10  r48: #4DA78BFA -> #00A78BFA)
+    path M0,0h108v108h-108z fill radial(center 100,12 r48: #3DF472B6 -> #00F472B6)
+    path M0,0h108v108h-108z fill radial(center 102,100 r48: #42FDBA74 -> #00FDBA74)
+    path M0,0h108v108h-108z fill radial(center 6,102 r48: #4267E8F9 -> #0067E8F9)
+    path M0,0h108v108h-108z fill radial(center 54,54 r40: offset .3 #F2FFFFFF -> 1 #00FFFFFF)
+  ic_launcher_foreground.xml  viewport 108x108 (glyph spans 30..78, max radius 34.5 < 36 safe zone)
+    brackets  strokeWidth 7, strokeColor linear (30,30)->(78,78) stops above:
+      M30,44V37a7,7 0 0 1 7,-7h7  M64,30h7a7,7 0 0 1 7,7v7  M78,64v7a7,7 0 0 1 -7,7h-7  M44,78h-7a7,7 0 0 1 -7,-7v-7
+    T         strokeWidth 7, strokeColor #7C3AED:  M43,45h22M54,45v21
+  ic_launcher_monochrome.xml  viewport 108x108: same bracket + T paths, strokeWidth 7, strokeColor #FF000000 (system tints)
+  ic_scan.xml (bubble glyph)  viewport 24x24, drawn 26dp inside the 56dp bubble (padding 15dp), bubble_bg.xml unchanged
+    brackets strokeWidth 2.2, strokeColor linear (4,4)->(20,20) same 4 stops:
+      M4,8V6a2,2 0,0 1,2 -2h2  M16,4h2a2,2 0,0 1,2 2v2  M20,16v2a2,2 0,0 1,-2 2h-2  M8,20H6a2,2 0,0 1,-2 -2v-2
+    T strokeWidth 2.2 #7C3AED: M8.5,9h7M12,9v7
+  ic_stat_textify.xml (notification small icon) viewport 24x24, strokeColor #FFFFFF, strokeWidth 2, transparent fill:
+    M4,8V6a2,2 0,0 1,2 -2h2M16,4h2a2,2 0,0 1,2 2v2M20,16v2a2,2 0,0 1,-2 2h-2M8,20H6a2,2 0,0 1,-2 -2v-2M8.5,9h7M12,9v7
+
+NATIVE NOTES
+  Adaptive icon (mipmap-anydpi-v26/ic_launcher.xml): <background>, <foreground>, <monochrome> (monochrome ignored below API 33, harmless). Gradients via <aapt:attr name="android:strokeColor"><gradient android:type="linear" startX/startY/endX/endY><item android:offset android:color/></gradient></aapt:attr> (VectorDrawable gradients API 24+, minSdk 26 OK). Radial: android:type="radial" centerX/centerY/gradientRadius.
+  Legacy PNG mipmaps not needed (minSdk 26 uses adaptive icon on all devices).
+  Bubble glyph: same ic_scan.xml id, only stroke colour becomes a gradient; entrance = 4 bracket <group>s animated via AnimatedVectorDrawable (translateX/Y + alpha objectAnimators, 320 ms, stagger 40) or skip the entrance (static) — no API split needed, AVD works on 26+.
+  Notification: NotificationCompat.Builder.setSmallIcon(R.drawable.ic_stat_textify).setColor(0xFF7C3AED). Status bar tints it (ink on light bar), shade header shows it white in a #7C3AED circle (API 31+ style); API 26-30 shows it tinted #7C3AED next to the app name — same drawable.
+  Mask crossfade / ripple / shade slide are demo chrome (system behaviour), not app code.
+-->
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Textify 圖示 · 稜光取景</title>
+<style>
+:root{--ink:#1E1B4B;--violet:#7C3AED;--plum:#4C1D95;--mist:#FAF5FF;--sub:#6B5FA8;--font:ui-rounded,"SF Pro Rounded","PingFang TC","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;--maskX:300ms;--sceneX:300ms;--bubbleIn:300ms;--shadeIn:350ms;--tap:400ms}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font);color:var(--ink);-webkit-font-smoothing:antialiased;min-height:100vh;background:radial-gradient(600px 420px at 8% 12%,rgba(167,139,250,.35),rgba(167,139,250,0) 70%),radial-gradient(520px 420px at 92% 18%,rgba(244,114,182,.25),rgba(244,114,182,0) 70%),radial-gradient(640px 480px at 70% 100%,rgba(103,232,249,.28),rgba(103,232,249,0) 70%),radial-gradient(500px 380px at 10% 95%,rgba(253,186,116,.28),rgba(253,186,116,0) 70%),#FAF5FF}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+.defs{position:absolute;width:0;height:0;overflow:hidden}
+.stage{display:flex;flex-wrap:wrap;gap:36px;justify-content:center;align-items:flex-start;padding:28px 20px}
+/* ---------- panel (mockup chrome) ---------- */
+.panel{width:270px;display:flex;flex-direction:column;gap:16px}
+.kicker{font-size:11px;letter-spacing:.14em;opacity:.6}
+.panel h1{font-size:30px;line-height:1.1;font-weight:600;letter-spacing:-.01em}
+.panel p{font-size:13.5px;line-height:1.6;opacity:.82}
+.btn{padding:10px 20px;border-radius:999px;background:#1E1B4B;color:#FAF5FF;font-weight:600;font-size:14px;align-self:flex-start;transition:transform .15s}
+.btn:active{transform:scale(.96)}
+.seg{display:flex;flex-wrap:wrap;gap:6px}
+.seg button{padding:6px 12px;border-radius:999px;background:rgba(255,255,255,.7);font-size:13px;box-shadow:0 1px 3px rgba(30,27,75,.08)}
+.seg button.on{background:#EDE4FF;color:#4C1D95;font-weight:600;box-shadow:0 0 0 1px rgba(124,58,237,.25)}
+.lbl{font-size:12px;opacity:.65;margin-bottom:6px}
+.chk{display:flex;gap:8px;align-items:center;font-size:13px}
+.sw{display:flex;flex-wrap:wrap;gap:6px}
+.sw span{display:flex;align-items:center;gap:6px;font-size:11px;font-family:ui-monospace,Menlo,monospace;opacity:.85}
+.sw i{width:16px;height:16px;border-radius:5px;display:inline-block;box-shadow:inset 0 0 0 1px rgba(30,27,75,.06)}
+.tt{font-size:11px;font-family:ui-monospace,Menlo,monospace;display:grid;grid-template-columns:1fr auto;gap:2px 12px;opacity:.75}
+/* ---------- device ---------- */
+.device{padding:11px;border-radius:46px;background:#16171a;box-shadow:0 30px 80px -20px rgba(30,27,75,.35)}
+.phone-wrap{width:calc(412px*var(--s,1));height:calc(915px*var(--s,1))}
+.phone{width:412px;height:915px;transform:scale(var(--s,1));transform-origin:0 0;position:relative;border-radius:36px;overflow:hidden;background:#fff;user-select:none;-webkit-user-select:none}
+.scene{position:absolute;inset:0;opacity:0;pointer-events:none;transition:opacity var(--sceneX) cubic-bezier(.2,0,0,1)}
+.scene.on{opacity:1;pointer-events:auto}
+.sb{position:absolute;left:0;right:0;top:0;height:36px;display:flex;align-items:center;justify-content:space-between;padding:6px 24px 0;font-size:14px;font-weight:500;z-index:2}
+.sb .l{display:flex;align-items:center;gap:8px}
+.nslot{width:16px;height:16px;color:#1E1B4B;opacity:0;transition:opacity var(--bubbleIn)}
+.nslot.on{opacity:1}
+.nslot svg{width:16px;height:16px;display:block}
+/* home */
+.wall{position:absolute;inset:0;background:radial-gradient(420px 360px at 20% 18%,rgba(167,139,250,.38),rgba(167,139,250,0) 70%),radial-gradient(380px 340px at 90% 40%,rgba(244,114,182,.26),rgba(244,114,182,0) 70%),radial-gradient(460px 380px at 30% 90%,rgba(103,232,249,.30),rgba(103,232,249,0) 70%),radial-gradient(360px 300px at 85% 92%,rgba(253,186,116,.32),rgba(253,186,116,0) 70%),#FAF5FF}
+.clock{position:absolute;left:28px;top:96px}
+.clock b{display:block;font-size:64px;font-weight:300;letter-spacing:-.02em;line-height:1}
+.clock span{font-size:15px;opacity:.75}
+.grid{position:absolute;left:14px;right:14px;top:500px;display:grid;grid-template-columns:repeat(4,1fr);row-gap:22px}
+.app{display:flex;flex-direction:column;align-items:center;gap:7px;font-size:12px;color:#1E1B4B;position:relative}
+.ic{position:relative;width:58px;height:58px}
+.ic svg{position:absolute;inset:0;width:100%;height:100%;filter:drop-shadow(0 2px 3px rgba(30,27,75,.16))}
+.fade{animation:fin var(--maskX) cubic-bezier(.2,0,0,1) both}
+@keyframes fin{from{opacity:0}}
+.dock{position:absolute;left:22px;right:22px;bottom:104px;display:grid;grid-template-columns:repeat(4,1fr);justify-items:center;padding:12px 0;border-radius:32px;background:rgba(255,255,255,.42)}
+.search{position:absolute;left:22px;right:22px;bottom:36px;height:52px;border-radius:26px;background:rgba(255,255,255,.75);display:flex;align-items:center;padding:0 20px;color:#6B5FA8;font-size:15px;box-shadow:0 2px 8px rgba(30,27,75,.06)}
+.ripple{position:absolute;width:76px;height:76px;margin:-38px 0 0 -38px;border-radius:50%;background:rgba(124,58,237,.22);pointer-events:none;opacity:0}
+.ripple.go{animation:rip var(--tap) ease-out}
+@keyframes rip{0%{opacity:1;transform:scale(.3)}100%{opacity:0;transform:scale(1.1)}}
+/* app (light reader) */
+.reader{position:absolute;inset:0;background:#fff;color:#22223a}
+.rbar{position:absolute;top:36px;left:0;right:0;height:56px;display:flex;align-items:center;gap:14px;padding:0 18px;font-size:18px;font-weight:600;border-bottom:1px solid rgba(30,27,75,.06)}
+.art{position:absolute;top:104px;left:22px;right:22px;font-family:"PingFang TC","Noto Serif TC","Songti TC",serif}
+.art .tag{font-family:var(--font);font-size:12px;color:#7C3AED;letter-spacing:.08em}
+.art h2{font-size:26px;line-height:1.35;margin:6px 0 10px}
+.art .meta{font-family:var(--font);font-size:12.5px;color:#7a7f94;margin-bottom:14px}
+.art .img{height:170px;border-radius:16px;background:linear-gradient(160deg,#c7e9f7,#f6d7e6 60%,#fde4c8);margin-bottom:16px}
+.art p{font-size:16px;line-height:1.8;margin-bottom:12px;color:#33354a}
+.bubble{position:absolute;left:344px;top:420px;width:56px;height:56px;z-index:5}
+.bub{width:56px;height:56px;border-radius:50%;display:flex;align-items:center;justify-content:center;position:relative;background:radial-gradient(circle at 50% 38%,#fff 55%,#F3EDFF);box-shadow:0 6px 18px rgba(124,58,237,.28),0 0 22px rgba(244,114,182,.35);opacity:0;transform:scale(.7);transition:opacity var(--bubbleIn) cubic-bezier(.2,0,0,1),transform var(--bubbleIn) cubic-bezier(.2,0,0,1)}
+.bubble.on .bub{opacity:1;transform:none}
+.bub .bbg{position:absolute;inset:0;width:56px;height:56px}
+.bub .gl{position:relative;width:26px;height:26px;overflow:visible}
+/* shade */
+.shade{position:absolute;left:0;right:0;top:0;height:700px;z-index:10;background:#FAF5FF;border-radius:0 0 30px 30px;box-shadow:0 18px 50px rgba(30,27,75,.18);transform:translateY(-102%);transition:transform var(--shadeIn) cubic-bezier(.2,0,0,1);padding:14px 16px}
+.shade.on{transform:none}
+.dim{position:absolute;inset:0;z-index:9;background:rgba(30,27,75,.10);opacity:0;pointer-events:none;transition:opacity var(--shadeIn)}
+.dim.on{opacity:1}
+.sh-top{display:flex;justify-content:space-between;align-items:baseline;padding:6px 8px 14px}
+.sh-top b{font-size:34px;font-weight:400}
+.sh-top span{font-size:13.5px;opacity:.7}
+.qs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:18px}
+.qs div{height:60px;border-radius:30px;background:#EFE7FC;display:flex;align-items:center;gap:10px;padding:0 16px;font-size:14px}
+.qs div.on{background:#DDD0FB;color:#4C1D95;font-weight:600}
+.qs i{width:22px;height:22px;border-radius:50%;background:rgba(124,58,237,.18)}
+.qs div.on i{background:#7C3AED}
+.sec{font-size:13px;font-weight:600;color:#6B5FA8;padding:6px 8px}
+.nc{background:#fff;border-radius:24px;padding:14px 16px;margin-bottom:8px;box-shadow:0 1px 2px rgba(30,27,75,.05)}
+.nh{display:flex;align-items:center;gap:8px;font-size:12.5px;color:#6B5FA8}
+.ncirc{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;flex:none}
+.ncirc svg{width:16px;height:16px}
+.nt{font-size:15px;font-weight:600;margin:6px 0 2px 34px}
+.nx{font-size:13.5px;line-height:1.5;color:#4b4a6b;margin-left:34px}
+.sh-act{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
+.sh-act span{padding:8px 16px;border-radius:999px;background:#EFE7FC;font-size:13px;font-weight:600;color:#4C1D95}
+.handle{width:36px;height:4px;border-radius:2px;background:rgba(30,27,75,.25);margin:14px auto 0}
+/* ---------- vector sheet ---------- */
+.sheet{width:470px;display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.card{background:rgba(255,255,255,.72);border-radius:22px;padding:14px;box-shadow:0 6px 24px rgba(124,58,237,.10)}
+.card.wide{grid-column:1/-1}
+.card h3{font-size:13px;font-weight:600;margin-bottom:2px}
+.card small{display:block;font-size:11px;opacity:.6;margin-bottom:10px;font-family:ui-monospace,Menlo,monospace}
+.big{width:100%;aspect-ratio:1;display:block;border-radius:12px}
+.chkr{background:repeating-conic-gradient(#F1EAFE 0 25%,#FFFFFF 0 50%) 0 0/16px 16px}
+.chkr-n{background:repeating-conic-gradient(rgba(167,139,250,.62) 0 25%,rgba(167,139,250,.48) 0 50%) 0 0/16px 16px}
+.masks{display:flex;justify-content:space-around;padding:16px 4px 8px;border-radius:16px;background:radial-gradient(260px 120px at 15% 20%,rgba(167,139,250,.35),rgba(167,139,250,0) 70%),radial-gradient(260px 140px at 90% 80%,rgba(103,232,249,.32),rgba(103,232,249,0) 70%),#FAF5FF}
+.masks figure{display:flex;flex-direction:column;align-items:center;gap:8px;font-size:12px}
+.masks svg{width:72px;height:72px;filter:drop-shadow(0 3px 5px rgba(30,27,75,.16))}
+.sizes{display:flex;align-items:center;gap:8px;white-space:nowrap;flex-wrap:wrap;margin-top:10px;font-size:11px;color:#6B5FA8}
+.sizes .ncirc{width:30px;height:30px}
+.guides{display:none}
+.showg .guides{display:inline}
+@media (max-width:900px){.sheet{width:min(470px,100%)}}
+/*MOTION*/
+.br,.t{transform-box:fill-box;transform-origin:center}
+.b1{--dx:-3px;--dy:-3px}.b2{--dx:3px;--dy:-3px}.b3{--dx:3px;--dy:3px}.b4{--dx:-3px;--dy:3px}
+.play .br{animation:d1br 320ms cubic-bezier(.2,0,0,1.25) both}
+.play .b2{animation-delay:40ms}.play .b3{animation-delay:80ms}.play .b4{animation-delay:120ms}
+@keyframes d1br{from{opacity:0;transform:translate(calc(var(--dx)*var(--u,1)),calc(var(--dy)*var(--u,1)))}}
+.play .t{animation:d1t 220ms 160ms cubic-bezier(.2,0,0,1) both}
+@keyframes d1t{from{opacity:0;transform:scale(.8)}}
+/*/MOTION*/
+</style>
+</head>
+<body>
+<svg class="defs" aria-hidden="true"><defs>
+<clipPath id="m-circle"><circle cx="54" cy="54" r="36"/></clipPath>
+<clipPath id="m-squircle"><path d="M54,18C82,18 90,26 90,54S82,90 54,90 18,82 18,54 26,18 54,18Z"/></clipPath>
+<clipPath id="m-rsquare"><rect x="18" y="18" width="72" height="72" rx="16"/></clipPath>
+<!--DEFS-->
+<linearGradient id="g-br" gradientUnits="userSpaceOnUse" x1="30" y1="30" x2="78" y2="78"><stop offset="0" stop-color="#A78BFA"/><stop offset=".35" stop-color="#F472B6"/><stop offset=".65" stop-color="#FDBA74"/><stop offset="1" stop-color="#67E8F9"/></linearGradient>
+<linearGradient id="g-br24" gradientUnits="userSpaceOnUse" x1="4" y1="4" x2="20" y2="20"><stop offset="0" stop-color="#A78BFA"/><stop offset=".35" stop-color="#F472B6"/><stop offset=".65" stop-color="#FDBA74"/><stop offset="1" stop-color="#67E8F9"/></linearGradient>
+<radialGradient id="g-c1" gradientUnits="userSpaceOnUse" cx="8" cy="10" r="48"><stop offset="0" stop-color="#A78BFA" stop-opacity=".30"/><stop offset="1" stop-color="#A78BFA" stop-opacity="0"/></radialGradient>
+<radialGradient id="g-c2" gradientUnits="userSpaceOnUse" cx="100" cy="12" r="48"><stop offset="0" stop-color="#F472B6" stop-opacity=".24"/><stop offset="1" stop-color="#F472B6" stop-opacity="0"/></radialGradient>
+<radialGradient id="g-c3" gradientUnits="userSpaceOnUse" cx="102" cy="100" r="48"><stop offset="0" stop-color="#FDBA74" stop-opacity=".26"/><stop offset="1" stop-color="#FDBA74" stop-opacity="0"/></radialGradient>
+<radialGradient id="g-c4" gradientUnits="userSpaceOnUse" cx="6" cy="102" r="48"><stop offset="0" stop-color="#67E8F9" stop-opacity=".26"/><stop offset="1" stop-color="#67E8F9" stop-opacity="0"/></radialGradient>
+<radialGradient id="g-c5" gradientUnits="userSpaceOnUse" cx="54" cy="54" r="40"><stop offset=".3" stop-color="#FFFFFF" stop-opacity=".95"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></radialGradient>
+<!--/DEFS-->
+</defs></svg>
+<main class="stage">
+  <aside class="panel">
+    <div><div class="kicker">TEXTIFY · 圖示語言 · <span id="dslug"></span></div><h1 id="dname"></h1></div>
+    <p id="dtag"></p>
+    <button class="btn" id="replay">▶ 重播 Replay</button>
+    <div><div class="lbl">場景</div><div class="seg" id="scenes"><button data-s="home">主畫面</button><button data-s="app">浮動泡泡</button><button data-s="shade">通知欄</button></div></div>
+    <div><div class="lbl">啟動器遮罩</div><div class="seg" id="maskSeg"><button data-m="circle">圓形</button><button data-m="squircle">方圓形</button><button data-m="rsquare">圓角方形</button></div></div>
+    <label class="chk"><input type="checkbox" id="themed"> Android 13 主題圖示（單色層）</label>
+    <label class="chk"><input type="checkbox" id="guides" checked> 向量圖稿顯示參考線（108 畫布 / 72 安全區）</label>
+    <div class="sw" id="palette"></div>
+    <div class="tt" id="timings"></div>
+  </aside>
+
+  <div class="device"><div class="phone-wrap"><div class="phone" id="phone">
+    <section class="scene on" id="s-home">
+      <div class="wall"></div>
+      <div class="sb"><span class="l">10:24</span><svg width="62" height="14" viewBox="0 0 62 14"><path d="M2 12h3V8H2zm5 0h3V5H7zm5 0h3V2h-3z" fill="#1E1B4B"/><path d="M28 4c3-3 9-3 12 0l-1.5 1.5c-2.3-2.2-6.7-2.2-9 0zm3 3c1.6-1.6 4.4-1.6 6 0L34 10z" fill="#1E1B4B"/><rect x="44" y="2" width="16" height="10" rx="3" fill="#1E1B4B"/></svg></div>
+      <div class="clock"><b>10:24</b><span>10月11日 星期日 · 晴 24°</span></div>
+      <div class="grid" id="grid"></div>
+      <div class="dock" id="dock"></div>
+      <div class="search">搜尋應用程式與網頁</div>
+      <div class="ripple" id="ripple"></div>
+    </section>
+
+    <section class="scene" id="s-app">
+      <div class="reader">
+        <div class="sb"><span class="l">10:25 <span class="nslot" id="nslot"></span></span><svg width="62" height="14" viewBox="0 0 62 14"><path d="M2 12h3V8H2zm5 0h3V5H7zm5 0h3V2h-3z" fill="#1E1B4B"/><path d="M28 4c3-3 9-3 12 0l-1.5 1.5c-2.3-2.2-6.7-2.2-9 0zm3 3c1.6-1.6 4.4-1.6 6 0L34 10z" fill="#1E1B4B"/><rect x="44" y="2" width="16" height="10" rx="3" fill="#1E1B4B"/></svg></div>
+        <div class="rbar"><svg width="22" height="22" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" stroke="#22223a" stroke-width="2.2" fill="none" stroke-linecap="round"/></svg>週末慢讀</div>
+        <div class="art">
+          <div class="tag">旅行 · 專題</div>
+          <h2>海邊小鎮的慢活提案：<br>三天兩夜不趕路</h2>
+          <div class="meta">文／林以晴　·　閱讀時間 6 分鐘</div>
+          <div class="img"></div>
+          <p>清晨六點的漁港還帶著霧氣，攤商把剛上岸的白帶魚整齊排開，價格寫在一塊被海風吹得斑駁的木板上。</p>
+          <p>沿著舊鐵道走二十分鐘，就能抵達那間只在週末營業的咖啡館，老闆說菜單每週換一次。</p>
+        </div>
+      </div>
+      <div class="bubble" id="bubble"><div class="bub" id="bub"></div></div>
+      <div class="dim" id="dim"></div>
+      <div class="shade" id="shade">
+        <div class="sh-top"><b>10:26</b><span>10月11日 星期日</span></div>
+        <div class="qs"><div class="on"><i></i>網際網路</div><div class="on"><i></i>藍牙</div><div><i></i>勿擾模式</div><div><i></i>手電筒</div></div>
+        <div class="sec">對話</div>
+        <div class="nc"><div class="nh"><span class="ncirc" style="background:#0369A1"><svg viewBox="0 0 24 24"><rect x="5" y="6" width="14" height="13" rx="3" fill="none" stroke="#fff" stroke-width="2"/><path d="M5 10h14" stroke="#fff" stroke-width="2"/></svg></span>日曆 · 10 分鐘前</div><div class="nt">下午 3:00 設計週會</div><div class="nx">會議室 B · 記得帶上新版圖示提案</div></div>
+        <div class="sec">靜音</div>
+        <div class="nc"><div class="nh"><span class="ncirc" id="ncirc" style="background:#7C3AED"></span>Textify · 現在 ⌄</div><div class="nt">Textify 正在執行</div><div class="nx">輕觸浮動泡泡即可擷取畫面上的文字；把泡泡拖到底部的 ✕ 可停止。</div></div>
+        <div class="sh-act"><span>管理</span><span>全部清除</span></div>
+        <div class="handle"></div>
+      </div>
+    </section>
+  </div></div></div>
+
+  <section class="sheet" id="sheet"></section>
+</main>
+<script>
+const D=/*DATA*/{
+ slug:'icon-1 · prism-frame',
+ name:'稜光取景',
+ tag:'保留掃描框的線條手感：四個角框帶著 Halo 光譜（薰衣草→粉→蜜桃→水藍）漸層，中間的「T」維持實心紫羅蘭；底層是帶四角柔光的霧白，像擷取結束後留在螢幕邊緣的餘暉。',
+ palette:[['lavender','#A78BFA'],['pink','#F472B6'],['peach','#FDBA74'],['aqua','#67E8F9'],['violet','#7C3AED'],['plum','#4C1D95'],['ink','#1E1B4B'],['mist','#FAF5FF']],
+ timings:[['角框進場 ×4','320'],['角框錯開','40'],['T 淡入 (延遲 160)','220'],['泡泡進場','300'],['遮罩切換（示範）','300'],['場景淡換','300'],['通知欄（系統）','350']],
+ bg:'<rect width="108" height="108" fill="#FAF5FF"/><rect width="108" height="108" fill="url(#g-c1)"/><rect width="108" height="108" fill="url(#g-c2)"/><rect width="108" height="108" fill="url(#g-c3)"/><rect width="108" height="108" fill="url(#g-c4)"/><rect width="108" height="108" fill="url(#g-c5)"/>',
+ fg:'<g fill="none" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"><path class="br b1" stroke="url(#g-br)" d="M30,44V37a7,7 0 0 1 7,-7h7"/><path class="br b2" stroke="url(#g-br)" d="M64,30h7a7,7 0 0 1 7,7v7"/><path class="br b3" stroke="url(#g-br)" d="M78,64v7a7,7 0 0 1 -7,7h-7"/><path class="br b4" stroke="url(#g-br)" d="M44,78h-7a7,7 0 0 1 -7,-7v-7"/><path class="t" stroke="#7C3AED" d="M43,45h22M54,45v21"/></g>',
+ mono:'<path fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" d="M30,44V37a7,7 0 0 1 7,-7h7M64,30h7a7,7 0 0 1 7,7v7M78,64v7a7,7 0 0 1 -7,7h-7M44,78h-7a7,7 0 0 1 -7,-7v-7M43,45h22M54,45v21"/>',
+ bub:'<g fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path class="br b1" stroke="url(#g-br24)" d="M4,8V6a2,2 0,0 1,2 -2h2"/><path class="br b2" stroke="url(#g-br24)" d="M16,4h2a2,2 0,0 1,2 2v2"/><path class="br b3" stroke="url(#g-br24)" d="M20,16v2a2,2 0,0 1,-2 2h-2"/><path class="br b4" stroke="url(#g-br24)" d="M8,20H6a2,2 0,0 1,-2 -2v-2"/><path class="t" stroke="#7C3AED" d="M8.5,9h7M12,9v7"/></g>',
+ notif:'<path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M4,8V6a2,2 0,0 1,2 -2h2M16,4h2a2,2 0,0 1,2 2v2M20,16v2a2,2 0,0 1,-2 2h-2M8,20H6a2,2 0,0 1,-2 -2v-2M8.5,9h7M12,9v7"/>'
+}/*/DATA*/;
+const $=id=>document.getElementById(id);
+const THEME_BG='#EADDFF',THEME_FG='#4C1D95';
+const APPS={
+ cam:{n:'相機',bg:'#FFE4D2',fg:'#C2410C',g:'<rect x="35" y="41" width="38" height="28" rx="7"/><circle cx="54" cy="55" r="7.5"/><path d="M46,41l3,-5h10l3,5"/>'},
+ pho:{n:'相簿',bg:'#FCE7F3',fg:'#BE185D',g:'<rect x="36" y="38" width="36" height="32" rx="7"/><path d="M38,66l11,-11 8,8 5,-5 8,8"/><circle cx="62" cy="47" r="3"/>'},
+ cal:{n:'日曆',bg:'#E0F2FE',fg:'#0369A1',g:'<rect x="37" y="40" width="34" height="32" rx="6"/><path d="M37,49h34M45,35v8M63,35v8"/>'},
+ wea:{n:'天氣',bg:'#FEF3C7',fg:'#B45309',g:'<circle cx="47" cy="47" r="7"/><path d="M52,69h13a7,7 0 0 0 0,-14a10,10 0 0 0 -19,3a6,6 0 0 0 6,11z"/>'},
+ msg:{n:'訊息',bg:'#DCFCE7',fg:'#15803D',g:'<path d="M36,45a8,8 0 0 1 8,-8h20a8,8 0 0 1 8,8v11a8,8 0 0 1 -8,8h-13l-10,8v-8a8,8 0 0 1 -5,-7z"/>'},
+ map:{n:'地圖',bg:'#E0E7FF',fg:'#4338CA',g:'<path d="M54,72s-14,-13 -14,-24a14,14 0 0 1 28,0c0,11 -14,24 -14,24z"/><circle cx="54" cy="48" r="5"/>'},
+ set:{n:'設定',bg:'#F1F5F9',fg:'#334155',g:'<circle cx="54" cy="54" r="7"/><circle cx="54" cy="54" r="17" stroke-dasharray="6 4.7" stroke-width="7"/>'},
+ tel:{n:'電話',bg:'#D1FAE5',fg:'#047857',g:'<path d="M42,37h6l4,10-5,3a22,22 0 0 0 10,10l3,-5 10,4v6a4,4 0 0 1 -4,4A33,33 0 0 1 38,41a4,4 0 0 1 4,-4z"/>'},
+ web:{n:'瀏覽器',bg:'#E0F2FE',fg:'#1D4ED8',g:'<circle cx="54" cy="54" r="17"/><path d="M37,54h34M54,37c-8,9 -8,25 0,34M54,37c8,9 8,25 0,34"/>'},
+ mus:{n:'音樂',bg:'#FFE4E6',fg:'#BE123C',g:'<path d="M48,66V40l20,-4v26"/><circle cx="43" cy="66" r="5"/><circle cx="63" cy="62" r="5"/>'},
+ tx:{n:'Textify'}
+};
+const GRID=['cam','pho','cal','wea','msg','tx','map','set'],DOCK=['tel','msg','web','mus'];
+let mask='circle',themed=false,timers=[];
+function inner(k,th){
+  if(k==='tx')return th?`<rect width="108" height="108" fill="${THEME_BG}"/><g style="color:${THEME_FG}">${D.mono}</g>`:D.bg+D.fg;
+  const a=APPS[k];return `<rect width="108" height="108" fill="${th?THEME_BG:a.bg}"/><g fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" style="color:${th?THEME_FG:a.fg}">${a.g}</g>`;
+}
+const icon=(k,m,th)=>`<svg viewBox="18 18 72 72"><g clip-path="url(#m-${m})">${inner(k,th)}</g></svg>`;
+function build(){
+  $('grid').innerHTML=GRID.map(k=>`<div class="app" data-k="${k}"><div class="ic"></div>${APPS[k].n}</div>`).join('');
+  $('dock').innerHTML=DOCK.map(k=>`<div class="app" data-k="${k}"><div class="ic"></div></div>`).join('');
+  $('bub').innerHTML=(D.bubBg||'')+`<svg class="gl anim" viewBox="0 0 24 24" style="--u:1">${D.bub}</svg>`;
+  $('nslot').innerHTML=`<svg viewBox="0 0 24 24">${D.notif}</svg>`;
+  $('ncirc').innerHTML=`<svg viewBox="0 0 24 24" style="color:#fff">${D.notif}</svg>`;
+  const G=`<g class="guides" fill="none" stroke="#7C3AED" stroke-opacity=".5" stroke-width=".5" stroke-dasharray="1.6 1.6"><rect x="18" y="18" width="72" height="72"/><circle cx="54" cy="54" r="36"/><circle cx="54" cy="54" r="33"/></g>`;
+  const G24=`<g class="guides" fill="none" stroke="#7C3AED" stroke-opacity=".16" stroke-width=".06">${Array.from({length:23},(_,i)=>`<path d="M${i+1},0V24M0,${i+1}H24"/>`).join('')}<rect x="2" y="2" width="20" height="20" stroke-opacity=".7" stroke-dasharray=".3 .3"/></g>`;
+  $('sheet').innerHTML=`
+  <div class="card"><h3>背景層 background</h3><small>108×108 viewport</small><svg class="big" viewBox="0 0 108 108">${D.bg}${G}</svg></div>
+  <div class="card"><h3>前景層 foreground</h3><small>108×108 · 透明底</small><svg class="big chkr anim" viewBox="0 0 108 108" style="--u:4.5">${D.fg}${G}</svg></div>
+  <div class="card"><h3>合成（未遮罩）</h3><small>前景 + 背景 · 72dp 安全區內</small><svg class="big anim" viewBox="0 0 108 108" style="--u:4.5">${D.bg}${D.fg}${G}</svg></div>
+  <div class="card"><h3>單色主題層 monochrome</h3><small>108×108 · 單色，由系統著色</small><svg class="big chkr" viewBox="0 0 108 108" style="color:#1E1B4B">${D.mono}${G}</svg></div>
+  <div class="card"><h3>泡泡圖示 bubble glyph</h3><small>24×24 · 繪於 56dp 泡泡（內距 15dp）</small><svg class="big chkr anim" viewBox="0 0 24 24" style="--u:1">${D.bub}${G24}</svg></div>
+  <div class="card"><h3>通知小圖示 small icon</h3><small>24×24 · 原生為白色 #FFFFFF 透明底</small><svg class="big chkr-n" viewBox="0 0 24 24" style="color:#fff">${D.notif}${G24}</svg>
+    <div class="sizes"><svg width="24" height="24" viewBox="0 0 24 24" style="color:#1E1B4B">${D.notif}</svg>狀態列<span class="ncirc" style="background:#7C3AED"><svg viewBox="0 0 24 24" style="color:#fff;width:18px;height:18px">${D.notif}</svg></span>通知標頭<svg width="16" height="16" viewBox="0 0 24 24" style="color:#1E1B4B">${D.notif}</svg>16px</div></div>
+  <div class="card wide"><h3>遮罩與主題圖示（淺色桌布）</h3><small>系統裁切 72dp 可視區；主題圖示由系統依桌布配色</small><div class="masks">
+    ${[['circle','圓形'],['squircle','方圓形'],['rsquare','圓角方形']].map(([m,n])=>`<figure>${icon('tx',m,false)}<figcaption>${n}</figcaption></figure>`).join('')}
+    <figure>${icon('tx','circle',true)}<figcaption>主題圖示</figcaption></figure></div></div>`;
+  $('dname').textContent=D.name;$('dtag').textContent=D.tag;$('dslug').textContent=D.slug;
+  $('palette').innerHTML=D.palette.map(([n,c])=>`<span><i style="background:${c}"></i>${n} ${c}</span>`).join('');
+  $('timings').innerHTML=D.timings.map(([n,v])=>`<span>${n}</span><span>${v} ms</span>`).join('');
+}
+function swap(box,html){const old=[...box.children];box.insertAdjacentHTML('beforeend',html);box.lastElementChild.classList.add('fade');setTimeout(()=>old.forEach(o=>o.remove()),300);}
+function paintHome(){document.querySelectorAll('#s-home .app').forEach(a=>swap(a.querySelector('.ic'),icon(a.dataset.k,mask,themed)));
+  document.querySelectorAll('#maskSeg button').forEach(b=>b.classList.toggle('on',b.dataset.m===mask));$('themed').checked=themed;}
+function setMask(m,th){mask=m;themed=th;paintHome();}
+function play(){document.querySelectorAll('.anim').forEach(e=>{e.classList.remove('play');void e.getBoundingClientRect();e.classList.add('play');});}
+function scene(s){$('s-home').classList.toggle('on',s==='home');$('s-app').classList.toggle('on',s!=='home');
+  $('shade').classList.toggle('on',s==='shade');$('dim').classList.toggle('on',s==='shade');
+  document.querySelectorAll('#scenes button').forEach(b=>b.classList.toggle('on',b.dataset.s===s));}
+function bubble(on){$('bubble').classList.toggle('on',on);$('nslot').classList.toggle('on',on);}
+const at=(ms,fn)=>timers.push(setTimeout(fn,ms));
+function stop(){timers.forEach(clearTimeout);timers=[];}
+function tap(){const t=document.querySelector('#s-home .app[data-k="tx"] .ic'),p=$('phone').getBoundingClientRect(),r=t.getBoundingClientRect(),s=p.width/412;
+  const el=$('ripple');el.style.left=((r.left+r.width/2-p.left)/s)+'px';el.style.top=((r.top+r.height/2-p.top)/s)+'px';el.classList.remove('go');void el.offsetWidth;el.classList.add('go');}
+function replay(){stop();scene('home');bubble(false);setMask('circle',false);play();
+  at(900,()=>setMask('squircle',false));at(1800,()=>setMask('rsquare',false));at(2700,()=>setMask('rsquare',true));at(3800,()=>setMask('circle',false));
+  at(4400,tap);at(4700,()=>scene('app'));at(5000,()=>bubble(true));at(5300,play);at(7200,()=>scene('shade'));}
+$('replay').onclick=replay;
+$('scenes').onclick=e=>{const s=e.target.dataset.s;if(!s)return;stop();scene(s);if(s!=='home'){bubble(true);play();}};
+$('maskSeg').onclick=e=>{const m=e.target.dataset.m;if(m){stop();setMask(m,themed);}};
+$('themed').onchange=e=>{stop();setMask(mask,e.target.checked);};
+$('guides').onchange=e=>$('sheet').classList.toggle('showg',e.target.checked);
+function fit(){const s=Math.min(1,(innerHeight-56)/937);document.documentElement.style.setProperty('--s',Math.max(.55,s));}
+addEventListener('resize',fit);fit();build();$('sheet').classList.add('showg');replay();
+</script>
+</body>
+</html>

@@ -1,0 +1,364 @@
+<!--
+Textify settings mockup S2 :: Direction "Bloom Portal"
+Concept: X and settings share one frosted capsule (gear | X); tapping the gear spins it and the settings screen blooms open as a circular reveal from the gear, over the fading session. The screen is led by a big residual-halo ring that IS the permission status (full colour = granted, greyed and still = not granted); languages are three large glyph tiles. Leaving collapses the screen as a reverse circular reveal into the bubble's position, and the bubble fades in right where the circle closed.
+
+PALETTE (hex): lavender #A78BFA, pink #F472B6, peach #FDBA74, aqua #67E8F9, periwinkle #818CF8, violet #7C3AED, plum #4C1D95, ink #1E1B4B, mist #FAF5FF, frost #FFFFFF, secondary text #6B5FA8, blocked text #BE185D
+Alphas: capsule #FFFFFF 86% + shadow #7C3AED 25% r16; page = frost #FFFFFF + RadialGradient at hero lavender 30% -> pink 14% -> 0 and aqua 18% low-right; status ring = SweepGradient halo stops, core stroke 100% + blurred copy 80% blur 12dp; not-granted ring = desaturated (ColorMatrix saturation 0) at 35%; permission row #FFFFFF 80% (not granted: LinearGradient peach 28% -> pink 16%); tile off #FFFFFF 82%, tile on LinearGradient #A78BFA -> #F472B6 70% -> #FDBA74 + glow #F472B6 55% r26; time bar LinearGradient aqua -> lavender -> pink on #1E1B4B 7%; tooltip #FFFFFF + shadow #F472B6 35%.
+
+TIMINGS (ms)
+  Fades / motion (every one <= 400): bubbleOut 180, glowIn 350, scrimIn 300, scrimOut 300, glowSettle 400, bloom 400, boxIn 260, xIn 240, closeOut 300, sessionOut 300 (gear rotates 120deg over the same 300), settingsIn 380 (circular reveal grow), riseIn 260 (content fade-up 14dp), settingsOut 340 (reverse reveal into bubble), bubbleIn 300, sysIn 300, sysOut 260, toggle 200, shake 360 (tile wobble), msgIn 220
+  Not fades: ocrWait 700 (simulated OCR), scrimDelay 150, boxStagger 140, btnStagger 0 (capsule enters as one), riseDelay 80, riseStagger 40, bubbleDelay 120, sysHold 600, blockHold 1800, noteIn 220, noteHold 2000, ringSpin 20000 (residual drift = glowLoop 2400 / 12%), glowLoop 2400, breath 1200
+
+NATIVE NOTES
+  Session: replace the X FrameLayout with a horizontal LinearLayout @+id/sessionActions 88x40dp (top|end, marginTop 44dp, marginEnd 16dp, background = shape rectangle cornerRadius 20dp solid #DBFFFFFF, elevation 4dp) holding two 44x40dp touch targets: ic_session_settings (gear: VectorDrawable viewport 24, stroke #4C1D95 2.2 round caps, circle r2.5 + circle r6 as arc paths + 8 short spokes) and the existing ic_session_close. Enter: alpha 0->1 + scale .6->1 (pivot right) 240ms. On tap: gear rotation 0->120 over 300ms.
+  Transition: SettingsActivity is translucent at launch (windowIsTranslucent, no window animation); in onCreate post { ViewAnimationUtils.createCircularReveal(root, gearX, gearY, 0f, hypot(w,h)) 380ms FastOutSlowIn } while SessionActivity root.animate().alpha(0) 300ms then finish(). Gear centre passed via Intent extras (screen coords). Content rise: LayoutAnimationController (alpha+translateY 14dp, 260ms, delay 80 + 40/child).
+  Leave (back / system back): createCircularReveal(root, bubbleX, bubbleY, hypot(w,h), 0f) 340ms FastOutLinearIn, then finish() with overridePendingTransition(0,0). Bubble position comes from the service's WindowManager.LayoutParams (x,y) via a shared repository; service shows the bubble 120ms into the collapse (alpha 0->1, scale .7->1, 300ms) so it reads as the circle "becoming" the bubble. Circular reveal is API 21+ — identical on API 26-30.
+  Status ring: custom View drawing one Paint.Style.STROKE circle with SweepGradient (width 8% of size) plus a second pass with BlurMaskFilter(12dp) (software layer on API 26-27, HW otherwise; on API 31+ RenderEffect blur may replace it). Shader matrix rotates once per 20 s (ValueAnimator, paused when not granted / onPause). Not granted: ColorMatrixColorFilter(saturation 0) + alpha .35.
+  Permission row is a single clickable row containing a MaterialSwitch (track gradient lavender->pink); tap launches Settings.ACTION_MANAGE_OVERLAY_PERMISSION, re-read in onResume. Tiles: three equal-weight FrameLayouts (role checkbox), selected = GradientDrawable + setShadowLayer glow (HW API 28+, skip 26-27). Last-one deselect: ObjectAnimator rotation [0,-4,4,-2,0] 360ms + tooltip PopupWindow / View alpha+scale 220ms, auto-hide 1800.
+-->
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Textify 設定 · Bloom Portal</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:ui-rounded,"SF Pro Rounded","Nunito","PingFang TC","Noto Sans TC",system-ui,sans-serif;color:#1E1B4B;overflow:hidden;-webkit-font-smoothing:antialiased;
+  background:radial-gradient(600px 420px at 8% 12%,rgba(167,139,250,.35),rgba(167,139,250,0) 70%),radial-gradient(520px 420px at 92% 18%,rgba(244,114,182,.25),rgba(244,114,182,0) 70%),radial-gradient(640px 480px at 70% 100%,rgba(103,232,249,.28),rgba(103,232,249,0) 70%),radial-gradient(500px 380px at 10% 95%,rgba(253,186,116,.28),rgba(253,186,116,0) 70%),#FAF5FF}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+.stage{height:100%;display:flex;align-items:center;justify-content:center;gap:48px;padding:24px}
+/* ---------- mockup control panel ---------- */
+.panel{width:300px;max-height:100%;overflow:auto;display:flex;flex-direction:column;gap:18px}
+.panel h1{font-size:30px;line-height:1.05;font-weight:500;letter-spacing:-.01em}
+.kicker{font-size:11px;letter-spacing:.14em;text-transform:uppercase;opacity:.6}
+.panel p{font-size:13.5px;line-height:1.55;opacity:.8}
+.ctrls{display:flex;flex-direction:column;gap:12px}
+.btn{padding:10px 18px;border-radius:999px;background:#1E1B4B;color:#FAF5FF;font-weight:600;font-size:14px;align-self:flex-start;transition:transform .15s}
+.btn:active{transform:scale(.96)}
+.seg{display:inline-flex;background:#EFE7FC;border-radius:999px;padding:3px;gap:2px}
+.seg button{padding:6px 12px;border-radius:999px;font-size:13px}
+.seg button[aria-pressed="true"]{background:#fff;box-shadow:0 2px 8px rgba(124,58,237,.2);font-weight:600}
+.lbl{font-size:12px;opacity:.7;margin-bottom:6px}
+.help{font-size:12px;line-height:1.6;opacity:.7}
+.sw{display:flex;flex-wrap:wrap;gap:6px}
+.sw span{display:flex;align-items:center;gap:6px;font-size:11px;font-family:ui-monospace,Menlo,monospace;opacity:.85}
+.sw i{width:16px;height:16px;border-radius:5px;display:inline-block}
+.tt{font-size:11px;font-family:ui-monospace,Menlo,monospace;display:grid;grid-template-columns:1fr auto;gap:2px 12px;opacity:.75}
+/* ---------- device (light bezel) ---------- */
+.device{padding:11px;border-radius:46px;background:linear-gradient(150deg,#FFFFFF,#EDE6FB);box-shadow:0 30px 80px -24px rgba(76,29,149,.35),0 2px 6px rgba(30,27,75,.08)}
+.phone-wrap{width:calc(412px*var(--s,1));height:calc(915px*var(--s,1))}
+.phone{width:412px;height:915px;transform:scale(var(--s,1));transform-origin:0 0;position:relative;border-radius:36px;overflow:hidden;background:#fff;user-select:none;-webkit-user-select:none}
+.layer{position:absolute;inset:0}
+/* ---------- fake third-party app (frozen screenshot source) ---------- */
+.scr{position:absolute;inset:0;font-family:Roboto,"Noto Sans TC","PingFang TC",system-ui,sans-serif;color:#1d2330;background:#f3f5f8;display:flex;flex-direction:column}
+.sb{height:34px;display:flex;align-items:center;justify-content:space-between;padding:6px 26px 0;font-size:14px;font-weight:500}
+.ab{height:60px;display:flex;align-items:center;gap:12px;padding:0 14px;background:#fff;box-shadow:0 1px 0 rgba(0,0,0,.05)}
+.av{width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#ffb27a,#ff6f91);flex:none}
+.ab .ti{font-size:16.5px;font-weight:600;line-height:1.2}.ab .st{font-size:12.5px;color:#5c6577}
+.msgs{flex:1;padding:14px 14px 0;display:flex;flex-direction:column;gap:10px;overflow:hidden}
+.day{align-self:center;font-size:12px;color:#5c6577;background:#e4e8ef;padding:3px 10px;border-radius:10px}
+.m{max-width:76%;padding:9px 13px;border-radius:18px;font-size:15px;line-height:1.42;background:#fff;align-self:flex-start;border-bottom-left-radius:6px}
+.m.me{align-self:flex-end;background:#2f6bff;color:#fff;border-radius:18px;border-bottom-right-radius:6px}
+.m .who{display:block;font-size:12px;font-weight:600;color:#d0457a;margin-bottom:1px}
+.card0{align-self:flex-start;width:72%;background:#fff;border-radius:16px;overflow:hidden}
+.card0 .img{height:92px;background:linear-gradient(120deg,#9ad0ff,#c7b8ff 60%,#ffd1e0)}
+.card0 .cb{padding:9px 13px 11px;font-size:14px;line-height:1.4}.card0 .h{font-weight:600;font-size:15px}.card0 .s{color:#5c6577;font-size:13px}
+.ib{height:84px;padding:12px 12px 28px;display:flex;gap:10px;align-items:center;background:#fff}
+.ib .f{flex:1;height:44px;border-radius:22px;background:#eef1f5;display:flex;align-items:center;padding:0 16px;color:#7a8394;font-size:15px}
+.ib .sd{width:44px;height:44px;border-radius:50%;background:#2f6bff}
+/* ---------- capture session ---------- */
+.session{display:none}.session.on{display:block}
+.scrim{opacity:0;pointer-events:none;background:radial-gradient(120% 80% at 50% 50%,rgba(30,27,75,.05),rgba(30,27,75,.16))}
+#glow{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.box{position:absolute;opacity:0;border-radius:999px;background-image:linear-gradient(90deg,rgba(167,139,250,.20),rgba(244,114,182,.16));box-shadow:0 0 12px rgba(167,139,250,.28);transform:scale(.9);transition:opacity var(--boxIn) cubic-bezier(.2,0,0,1),transform var(--boxIn) cubic-bezier(.2,0,0,1)}
+.box.in{opacity:1;transform:none}
+.sbtn{position:absolute;top:44px;width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.86);color:#4C1D95;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(124,58,237,.25),0 1px 2px rgba(30,27,75,.12);opacity:0;pointer-events:none;transform:scale(.6) rotate(-90deg);transition:opacity var(--xIn) cubic-bezier(.2,0,0,1),transform var(--xIn) cubic-bezier(.2,0,0,1.3)}
+#xbtn{right:16px}#gearBtn{right:68px;transition-delay:var(--btnStagger)}
+.session.btns .sbtn{opacity:1;pointer-events:auto;transform:none}
+.session.btns .sbtn:active{transform:scale(.9)}
+.session.closing #xbtn{transform:scale(.6) rotate(90deg);transition-duration:var(--closeOut)}
+.session.toset #gearBtn{transform:rotate(90deg) scale(1.08);box-shadow:0 0 0 6px rgba(167,139,250,.25),0 0 24px rgba(244,114,182,.45);transition-duration:var(--sessionOut)}
+/* ---------- bubble ---------- */
+.bubble{position:absolute;left:0;top:0;width:56px;height:56px;z-index:20;cursor:pointer}
+.bub{width:100%;height:100%;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#7C3AED;background:radial-gradient(circle at 50% 38%,#fff 55%,#F3EDFF);box-shadow:0 6px 18px rgba(124,58,237,.28),0 0 22px rgba(244,114,182,.35);transition:opacity var(--bubbleIn) cubic-bezier(.2,0,0,1),transform var(--bubbleIn) cubic-bezier(.2,0,0,1)}
+.bubble.hide{pointer-events:none}.bubble.hide .bub{opacity:0;transform:scale(.7);transition-duration:var(--bubbleOut)}
+.finger{position:absolute;left:0;top:0;width:56px;height:56px;margin:-28px 0 0 -28px;border-radius:50%;background:rgba(120,120,130,.35);pointer-events:none;z-index:40;opacity:0}
+.finger.go{animation:finger 520ms ease-out}
+@keyframes finger{0%{opacity:0;scale:1.6}35%{opacity:1;scale:.8}100%{opacity:0;scale:.8}}
+.orb{width:26px;height:26px;flex:none;border-radius:50%;background:conic-gradient(from 0deg,#A78BFA,#F472B6,#FDBA74,#67E8F9,#818CF8,#A78BFA);box-shadow:0 0 12px rgba(244,114,182,.55);position:relative;display:block}
+.orb::after{content:"";position:absolute;inset:7px;border-radius:50%;background:#fff}
+.orb.dim{filter:grayscale(1) opacity(.55);box-shadow:none}
+.note{position:absolute;left:50%;bottom:56px;z-index:30;display:flex;align-items:center;gap:10px;padding:10px 18px 10px 10px;border-radius:999px;background:rgba(255,255,255,.95);font-size:14px;box-shadow:0 10px 30px rgba(124,58,237,.25);white-space:nowrap;opacity:0;transform:translate(-50%,10px) scale(.92);transition:opacity var(--noteIn),transform var(--noteIn) cubic-bezier(.2,0,0,1.25);pointer-events:none}
+.note.show{opacity:1;transform:translate(-50%,0)}
+/* ---------- settings page (direction: Bloom Portal) ---------- */
+.cap{position:absolute;top:44px;right:16px;height:40px;display:flex;border-radius:999px;background:rgba(255,255,255,.86);box-shadow:0 4px 16px rgba(124,58,237,.25),0 1px 2px rgba(30,27,75,.12);opacity:0;pointer-events:none;transform:scale(.6);transform-origin:100% 50%;transition:opacity var(--xIn) cubic-bezier(.2,0,0,1),transform var(--xIn) cubic-bezier(.2,0,0,1.3)}
+.session.btns .cap{opacity:1;pointer-events:auto;transform:none}
+.cap .sbtn,.session .cap #gearBtn,.session .cap #xbtn{position:static;opacity:1;pointer-events:auto;transform:none;background:none;box-shadow:none;width:44px;height:40px;border-radius:999px;transition:transform 120ms}
+.session.btns .cap .sbtn:active{transform:scale(.88)}
+.session.closing .cap{transform:scale(.6);opacity:0;transition-duration:var(--closeOut)}
+.session.toset .cap #gearBtn{transform:rotate(120deg);transition:transform var(--sessionOut) cubic-bezier(.2,0,0,1)}
+.switch{width:52px;height:32px;border-radius:999px;background:rgba(30,27,75,.12);position:relative;flex:none;display:block;transition:background var(--toggle)}
+.switch i{position:absolute;top:4px;left:4px;width:24px;height:24px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(30,27,75,.25);transition:transform var(--toggle) cubic-bezier(.2,0,0,1)}
+.granted .switch{background:linear-gradient(90deg,#A78BFA,#F472B6)}
+.granted .switch i{transform:translateX(20px)}
+.granted .d,.denied .g{display:none}
+.st-sb{height:34px;display:flex;align-items:center;justify-content:space-between;padding:6px 26px 0;font-size:14px;font-weight:600}
+.settings{display:none;z-index:10;overflow:hidden;
+  background:radial-gradient(440px 380px at 50% 15%,rgba(167,139,250,.30),rgba(244,114,182,.14) 45%,rgba(250,245,255,0) 72%),radial-gradient(320px 280px at 92% 72%,rgba(103,232,249,.18),rgba(103,232,249,0) 70%),#FFFFFF;
+  clip-path:circle(0px at var(--ox,346px) var(--oy,64px));transition:clip-path var(--settingsOut) cubic-bezier(.4,0,1,1)}
+.settings.on{display:block}
+.settings.in{clip-path:circle(var(--r,1010px) at var(--ox,346px) var(--oy,64px));transition:clip-path var(--settingsIn) cubic-bezier(.2,0,0,1)}
+.rise{opacity:0;transform:translateY(14px);transition:opacity 160ms,transform 160ms}
+.settings.out .rise{opacity:1;transform:none;transition:none}
+.settings.in .rise{opacity:1;transform:none;transition:opacity var(--riseIn) cubic-bezier(0,0,.2,1),transform var(--riseIn) cubic-bezier(0,0,.2,1);transition-delay:calc(var(--riseDelay) + var(--i) * var(--riseStagger))}
+.st-top{display:flex;align-items:center;justify-content:space-between;padding:8px 8px 0}
+.st-top h2{font-size:18px;font-weight:700;letter-spacing:.08em}
+.back{width:48px;height:48px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#4C1D95}
+.back:active{background:rgba(167,139,250,.18)}
+.hero{padding:6px 22px 0;text-align:center}
+.ring{position:relative;width:150px;height:150px;margin:4px auto 14px;transition:transform 400ms cubic-bezier(.2,0,0,1.4)}
+.ring i{position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 0deg,#A78BFA,#F472B6,#FDBA74,#67E8F9,#818CF8,#A78BFA);-webkit-mask:radial-gradient(circle,transparent 60%,#000 61.5%,#000 69%,transparent 70.5%);mask:radial-gradient(circle,transparent 60%,#000 61.5%,#000 69%,transparent 70.5%);animation:spin var(--ringSpin) linear infinite;transition:opacity var(--toggle),filter var(--toggle)}
+.ring .rb{filter:blur(12px);opacity:.8}
+@keyframes spin{to{transform:rotate(360deg)}}
+.ring span{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#7C3AED;transition:color var(--toggle)}
+.denied .ring i{filter:grayscale(1);opacity:.35;animation-play-state:paused}
+.denied .ring .rb{filter:grayscale(1) blur(12px);opacity:.25}
+.denied .ring span{color:#9C95B8}
+.flash .ring{animation:pop 400ms cubic-bezier(.2,0,0,1.4)}
+@keyframes pop{0%{transform:scale(.9)}100%{transform:none}}
+.hstate{display:block;font-size:21px;font-weight:700}
+.hsub{display:block;font-size:13.5px;line-height:1.5;color:#6B5FA8;margin-top:4px;min-height:40px}
+.permrow{margin-top:10px;width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px 12px 22px;border-radius:999px;background:rgba(255,255,255,.8);box-shadow:0 8px 22px -10px rgba(124,58,237,.3);font-size:15px;font-weight:600;text-align:left;transition:background var(--toggle)}
+.denied .permrow{background:linear-gradient(90deg,rgba(253,186,116,.28),rgba(244,114,182,.16))}
+.permrow:active{transform:scale(.98)}
+.langs{padding:26px 22px 0}
+.sec{display:flex;align-items:baseline;gap:8px;font-size:13px;font-weight:700;color:#6B5FA8;letter-spacing:.06em;margin:0 4px 12px}
+.sec small{font-weight:500;letter-spacing:0;opacity:.8}
+.tiles{position:relative;display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.tile{position:relative;height:136px;border-radius:26px;background:rgba(255,255,255,.82);box-shadow:0 8px 20px -10px rgba(124,58,237,.28);display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;color:#1E1B4B;transition:transform var(--toggle) cubic-bezier(.2,0,0,1.3),background var(--toggle),box-shadow var(--toggle),color var(--toggle)}
+.tile:active{transform:scale(.96)}
+.tg{font-size:40px;font-weight:700;line-height:1.1;color:#4C1D95;margin-bottom:6px;transition:color var(--toggle)}
+.tile b{font-size:15px}.tile small{font-size:11.5px;color:#6B5FA8;transition:color var(--toggle)}
+.tile.on{background:linear-gradient(150deg,#A78BFA,#F472B6 70%,#FDBA74);color:#fff;box-shadow:0 12px 26px -8px rgba(244,114,182,.55),0 0 22px rgba(167,139,250,.35)}
+.tile.on .tg,.tile.on small{color:#fff}
+.tick{position:absolute;top:10px;right:10px;width:22px;height:22px;border-radius:50%;background:rgba(30,27,75,.07);transition:background var(--toggle)}
+.tick::after{content:"";position:absolute;left:7.5px;top:4px;width:5px;height:10px;border:solid #7C3AED;border-width:0 2.4px 2.4px 0;transform:rotate(45deg) scale(0);transition:transform var(--toggle) cubic-bezier(.2,0,0,1.4)}
+.tile.on .tick{background:#fff}.tile.on .tick::after{transform:rotate(45deg) scale(1)}
+.tile.blocked{animation:wob var(--shake) ease-in-out}
+@keyframes wob{0%,100%{transform:none}25%{transform:rotate(-4deg)}50%{transform:rotate(4deg)}75%{transform:rotate(-2deg)}}
+.tip{position:absolute;left:var(--bx,50%);top:-44px;transform:translate(-50%,6px) scale(.9);opacity:0;padding:8px 14px;border-radius:999px;background:#fff;color:#BE185D;font-size:13px;font-weight:700;white-space:nowrap;box-shadow:0 8px 24px rgba(244,114,182,.35);pointer-events:none;z-index:2;transition:opacity var(--msgIn),transform var(--msgIn) cubic-bezier(.2,0,0,1.3)}
+.tip::after{content:"";position:absolute;left:50%;bottom:-4px;width:10px;height:10px;background:#fff;transform:translateX(-50%) rotate(45deg)}
+.tip.show{opacity:1;transform:translate(-50%,0)}
+.speed{margin-top:18px;display:flex;align-items:center;gap:12px;font-size:13px;color:#6B5FA8;padding:0 4px}
+.bar{flex:1;height:8px;border-radius:4px;background:rgba(30,27,75,.07);overflow:hidden}
+.bar i{display:block;height:100%;width:33.4%;border-radius:4px;background:linear-gradient(90deg,#67E8F9,#A78BFA,#F472B6);transition:width var(--toggle) cubic-bezier(.2,0,0,1)}
+.settings[data-n="2"] .bar i{width:66.7%}.settings[data-n="3"] .bar i{width:100%}
+.speed b{color:#1E1B4B;min-width:3em;text-align:right}
+.foot{text-align:center;font-size:12.5px;color:#6B5FA8;margin-top:22px}
+
+/* ---------- mock system settings page (shared stub) ---------- */
+.sys{display:none;z-index:15;background:#F7F6FB;color:#1c1b1f;font-family:Roboto,"Noto Sans TC",system-ui,sans-serif;transform:translateX(100%);transition:transform var(--sysOut) cubic-bezier(.4,0,1,1)}
+.sys.on{display:block}.sys.in{transform:none;transition:transform var(--sysIn) cubic-bezier(0,0,.2,1)}
+.sys-top{display:flex;align-items:center;gap:8px;padding:16px 8px 20px;font-size:21px}
+.sys-top button{width:48px;height:48px;border-radius:50%;display:flex;align-items:center;justify-content:center}
+.sys-app{margin:0 16px;background:#fff;border-radius:24px;padding:16px;display:flex;align-items:center;gap:14px}
+.sys-ic{width:40px;height:40px;border-radius:12px;background:#F3EDFF;color:#7C3AED;display:flex;align-items:center;justify-content:center}
+.sys-app div{flex:1}.sys-app b{display:block;font-size:16px;font-weight:500}.sys-app small{font-size:13px;color:#5f5c66}
+.sys-sw{width:52px;height:32px;border-radius:999px;background:#E6E0EC;position:relative}
+.sys-sw i{position:absolute;top:8px;left:8px;width:16px;height:16px;border-radius:50%;background:#79747E;transition:all var(--toggle)}
+.sys-sw.on{background:#6750A4}.sys-sw.on i{left:24px;top:4px;width:24px;height:24px;background:#fff}
+.sys-desc{margin:18px 28px;font-size:14px;line-height:1.5;color:#5f5c66}
+.sys-tag{position:absolute;left:50%;bottom:40px;transform:translateX(-50%);font-size:12px;color:#79747E;background:#ECE9F2;padding:5px 12px;border-radius:999px}
+@media (max-width:820px){body{overflow:auto}.stage{flex-direction:column;height:auto}.panel{width:100%;max-width:440px}}
+</style>
+</head>
+<body>
+<main class="stage">
+  <aside class="panel">
+    <div><div class="kicker">Textify · 設定 · S2 · bloom-portal</div><h1>Bloom Portal</h1></div>
+    <p>X 與設定鈕合成一顆霧面膠囊（齒輪｜X）。點齒輪後它轉動，設定頁以「圓形展開」從齒輪處綻放；首屏的大光環就是權限狀態——全彩代表已授權、褪成灰色代表未授權。語言是三張大字卡。離開時整頁收合成圓，縮回泡泡的位置，泡泡在那裡浮現。</p>
+    <div class="ctrls">
+      <button class="btn" id="replay">▶ 重播 Replay</button>
+      <div><div class="lbl">模擬懸浮權限狀態（設定頁中即時切換）</div>
+        <div class="seg" id="permSeg"><button data-p="1" aria-pressed="true">已授權</button><button data-p="0" aria-pressed="false">未授權</button></div></div>
+    </div>
+    <div class="help"><b>點泡泡</b> 開始擷取 · <b>設定鈕</b>（X 左側）開啟設定 · <b>X</b> 關閉擷取 · 設定頁 <b>返回</b> 或 <b>Esc</b>（＝系統返回）離開 · 取消最後一種語言會被擋下</div>
+    <div class="sw" id="palette"></div>
+    <div class="tt" id="timings"></div>
+  </aside>
+  <div class="device"><div class="phone-wrap"><div class="phone" id="phone">
+    <div class="layer" id="live">
+      <div class="scr">
+        <div class="sb"><span class="t">9:41</span><span>▮▮▮</span></div>
+        <div class="ab"><div class="av"></div><div><div class="ti t">設計小組 Design Crew</div><div class="st t">3 位成員在線上 · online</div></div></div>
+        <div class="msgs">
+          <div class="day t">今天 14:20</div>
+          <div class="m"><span class="who t">Mia 林</span><span class="t">下週的 workshop 資料準備好了嗎？</span></div>
+          <div class="m"><span class="t">地點在台北市信義區松仁路 100 號 12F，10:00 準時開始。</span></div>
+          <div class="m me"><span class="t">好的，我把 slides 整理一下，晚點傳給大家。</span></div>
+          <div class="card0"><div class="img"></div><div class="cb"><div class="h t">Workshop 報名確認</div><div class="s t">Booking ref: TXF-48213 · 10/24</div></div></div>
+          <div class="m"><span class="t">Wi-Fi 密碼是 Textify-2026，記得帶轉接頭。</span></div>
+        </div>
+        <div class="ib"><div class="f">輸入訊息…</div><div class="sd"></div></div>
+      </div>
+    </div>
+    <div class="layer session" id="session">
+      <div class="layer" id="frozen"></div>
+      <div class="layer scrim" id="scrim"></div>
+      <canvas id="glow"></canvas>
+      <div class="layer" id="boxes"></div>
+      <div class="cap" id="cap">
+      <button class="sbtn" id="gearBtn" aria-label="設定"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><circle cx="12" cy="12" r="2.5"/><circle cx="12" cy="12" r="6"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"/></svg></button>
+      <button class="sbtn" id="xbtn" aria-label="關閉擷取"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
+    </div>
+    <div class="layer settings" id="settings" role="dialog" aria-label="設定">
+      <div class="st-sb"><span>9:41</span><span>▮▮▮</span></div>
+      <div class="st-top rise" style="--i:0"><button class="back" data-act="back" aria-label="返回"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 6l-6 6 6 6"/></svg></button><h2>設定</h2><span style="width:48px"></span></div>
+      <section class="hero rise" style="--i:1" id="permCard">
+        <div class="ring"><i class="rb"></i><i></i><span><svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M8.5 9h7M12 9v7"/></svg></span></div>
+        <b class="hstate"><span class="g">懸浮泡泡已啟用</span><span class="d">懸浮泡泡尚未授權</span></b>
+        <small class="hsub"><span class="g">泡泡可以顯示在其他應用程式上層，隨時點一下就能擷取。</span><span class="d">沒有這個權限，泡泡無法顯示，也無法開始擷取。</span></small>
+        <button class="permrow" data-act="perm" role="switch" aria-label="允許顯示在其他應用程式上層"><span>允許顯示在其他應用程式上層</span><i class="switch"><i></i></i></button>
+      </section>
+      <section class="langs rise" style="--i:2">
+        <div class="sec">辨識語言 <small>可多選，至少一種</small></div>
+        <div class="tiles">
+          <div class="tile" data-lang="zh" role="checkbox" tabindex="0"><i class="tick"></i><span class="tg">中</span><b>中文</b><small>含英文 ABC</small></div>
+          <div class="tile" data-lang="ja" role="checkbox" tabindex="0"><i class="tick"></i><span class="tg">あ</span><b>日本語</b><small>かな・漢字</small></div>
+          <div class="tile" data-lang="ko" role="checkbox" tabindex="0"><i class="tick"></i><span class="tg">한</span><b>한국어</b><small>한글</small></div>
+          <div class="tip" id="blockMsg" role="status">至少要選一種</div>
+        </div>
+        <div class="speed"><span>辨識時間</span><div class="bar"><i></i></div><b id="speedTxt"></b></div>
+      </section>
+      <p class="foot rise" style="--i:3">新設定會在下次擷取時生效</p>
+    </div>
+    <div class="layer sys" id="sys">
+      <div class="st-sb" style="font-weight:500"><span>9:41</span><span>▮▮▮</span></div>
+      <div class="sys-top"><button data-act="sysback" aria-label="返回"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M19 12H5M11 6l-6 6 6 6"/></svg></button>在其他應用程式上層顯示</div>
+      <div class="sys-app"><div class="sys-ic" id="sysIc"></div><div><b>Textify</b><small>允許顯示在其他應用程式上層</small></div><button class="sys-sw" id="sysSw" role="switch" aria-label="允許顯示在其他應用程式上層"><i></i></button></div>
+      <p class="sys-desc">允許這個應用程式顯示在你正在使用的其他應用程式上層。</p>
+      <div class="sys-tag">模擬的 Android 系統設定頁</div>
+    </div>
+    <div class="note" id="note"><i class="orb dim"></i><span>未授權懸浮權限，泡泡暫時無法顯示</span></div>
+    <div class="bubble" id="bubble" aria-label="Textify 泡泡"><div class="bub" id="bub"></div></div>
+    <div class="finger" id="finger"></div>
+  </div></div></div>
+</main>
+<script>
+var ICON_SCAN='<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M8.5 9h7M12 9v7"/></svg>';
+var THEME={
+  T:{bubbleOut:180,glowIn:350,scrimDelay:150,scrimIn:300,scrimOut:300,glowSettle:400,bloom:400,boxIn:260,boxStagger:140,xIn:240,btnStagger:0,closeOut:300,sessionOut:300,settingsIn:380,riseIn:260,riseDelay:80,riseStagger:40,settingsOut:340,bubbleDelay:120,bubbleIn:300,sysIn:300,sysOut:260,sysHold:600,toggle:200,shake:360,msgIn:220,blockHold:1800,noteIn:220,noteHold:2000,ocrWait:700,ringSpin:20000,glowLoop:2400,breath:1200},
+  palette:[['lavender','#A78BFA'],['pink','#F472B6'],['peach','#FDBA74'],['aqua','#67E8F9'],['periwinkle','#818CF8'],['violet','#7C3AED'],['plum','#4C1D95'],['ink','#1E1B4B'],['mist','#FAF5FF'],['frost','#FFFFFF']],
+  speed:['快','中','慢'],
+  enter:function(el,c){el.style.transition='none';el.style.setProperty('--r',Math.ceil(Math.max(Math.hypot(c.x,c.y),Math.hypot(412-c.x,c.y),Math.hypot(c.x,915-c.y),Math.hypot(412-c.x,915-c.y)))+'px');el.style.setProperty('--ox',c.x+'px');el.style.setProperty('--oy',c.y+'px');void el.offsetWidth;el.style.transition=''},
+  leave:function(el,c){el.style.transition='none';el.style.setProperty('--r',Math.ceil(Math.max(Math.hypot(c.x,c.y),Math.hypot(412-c.x,c.y),Math.hypot(c.x,915-c.y),Math.hypot(412-c.x,915-c.y)))+'px');el.style.setProperty('--ox',c.x+'px');el.style.setProperty('--oy',c.y+'px');void el.offsetWidth;el.style.transition=''}
+};
+</script>
+<script>
+/* ===== shared engine (same in settings-1/2/3; direction differences live in THEME + CSS) ===== */
+function conic(ctx,W,H,a,stops){const g=ctx.createConicGradient(a,W/2,H/2);for(const [o,c] of stops)g.addColorStop(o,c);return g}
+function ring(ctx,W,H,o){ctx.save();ctx.globalAlpha=Math.max(0,Math.min(1,o.alpha));ctx.filter=o.blur?`blur(${o.blur}px)`:'none';ctx.strokeStyle=o.style;ctx.lineWidth=o.width;ctx.beginPath();ctx.roundRect(0,0,W,H,36);ctx.stroke();ctx.restore()}
+const lerp=(a,b,t)=>a+(b-a)*t,easeOut=t=>1-Math.pow(1-t,3),easeInOut=t=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
+(()=>{
+const T=THEME.T,W=412,H=915,BS=56,$=id=>document.getElementById(id);
+const phone=$('phone'),live=$('live'),session=$('session'),frozen=$('frozen'),scrim=$('scrim'),cv=$('glow'),boxesEl=$('boxes'),
+  bubble=$('bubble'),finger=$('finger'),setEl=$('settings'),sys=$('sys'),sysSw=$('sysSw'),note=$('note'),blockMsg=$('blockMsg'),gearBtn=$('gearBtn');
+for(const k in T)phone.style.setProperty('--'+k,T[k]+'ms');
+$('bub').innerHTML=ICON_SCAN;$('sysIc').innerHTML=ICON_SCAN;
+$('palette').innerHTML=THEME.palette.map(([n,h])=>`<span><i style="background:${h}"></i>${n} ${h}</span>`).join('');
+$('timings').innerHTML=Object.entries(T).map(([k,v])=>`<span>${k}</span><span>${v} ms</span>`).join('');
+let S=1;function fit(){S=Math.min(1,(innerHeight-70)/915);document.documentElement.style.setProperty('--s',S)}fit();addEventListener('resize',fit);
+// ---- residual halo (identical recipe to a2-halo) ----
+const dpr=Math.max(1,Math.min(2,devicePixelRatio||1));cv.width=W*dpr;cv.height=H*dpr;const ctx=cv.getContext('2d');
+const g={a:0,mix:0,spin:0,t0:0},tweens=[];let raf=0,lastT=0;
+function tween(o,k,to,dur,ease=easeOut){for(let i=tweens.length;i--;)if(tweens[i].o===o&&tweens[i].k===k)tweens.splice(i,1);tweens.push({o,k,from:o[k],to,dur,t0:performance.now(),ease});kick()}
+function kick(){if(!raf){lastT=performance.now();raf=requestAnimationFrame(frame)}}
+function frame(now){raf=0;const dt=Math.min(64,now-lastT);lastT=now;
+  for(let i=tweens.length;i--;){const w=tweens[i],p=Math.min(1,(now-w.t0)/w.dur);w.o[w.k]=w.from+(w.to-w.from)*w.ease(p);if(p>=1)tweens.splice(i,1)}
+  g.spin+=dt*lerp(1,.12,g.mix);ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,W,H);
+  if(g.a>.001){const ang=g.spin/T.glowLoop*Math.PI*2,b=Math.sin(g.spin/T.breath*Math.PI*2),bloom=1-easeOut(Math.min(1,(now-g.t0)/T.bloom));
+    const s=conic(ctx,W,H,ang,[[0,'#A78BFA'],[.2,'#F472B6'],[.38,'#FDBA74'],[.56,'#67E8F9'],[.76,'#818CF8'],[1,'#A78BFA']]);
+    ring(ctx,W,H,{style:s,width:lerp(44+10*b+70*bloom,26,g.mix),blur:30,alpha:g.a*lerp(.75,.22,g.mix)});
+    if(g.mix<.99)ring(ctx,W,H,{style:s,width:12+4*b,blur:7,alpha:g.a*(1-g.mix)*.9})}
+  if(tweens.length||g.a>.001)raf=requestAnimationFrame(frame)}
+let timers=[];const later=(f,ms)=>timers.push(setTimeout(f,ms)),clearTimers=()=>{timers.forEach(clearTimeout);timers=[]};
+let state='idle',perm=true,blockT=0,noteT=0;const langs=new Set(['zh']);
+// ---- OCR simulation: one pill per rendered text line ----
+function ocr(){const pr=phone.getBoundingClientRect(),out=[],r=document.createRange();
+  frozen.querySelectorAll('.t').forEach(el=>{const node=el.firstChild;if(!node||node.nodeType!==3)return;let cur=null;
+    for(let i=0;i<node.data.length;i++){if(/\s/.test(node.data[i]))continue;r.setStart(node,i);r.setEnd(node,i+1);const b=r.getBoundingClientRect();if(!b.width)continue;
+      const c={x0:(b.left-pr.left)/S,x1:(b.right-pr.left)/S,y0:(b.top-pr.top)/S,y1:(b.bottom-pr.top)/S};
+      if(!cur||c.y0>cur.y0+(cur.y1-cur.y0)*.6){cur={x0:c.x0,x1:c.x1,y0:c.y0,y1:c.y1};out.push(cur)}
+      cur.x0=Math.min(cur.x0,c.x0);cur.x1=Math.max(cur.x1,c.x1);cur.y1=Math.max(cur.y1,c.y1)}});
+  return out}
+// ---- session lifecycle ----
+function startCapture(){if(state!=='idle'||!perm)return;state='capturing';bubble.classList.add('hide');
+  later(()=>{frozen.replaceChildren(live.firstElementChild.cloneNode(true));
+    session.style.transition='none';session.style.opacity=1;session.className='layer session on';
+    const lines=ocr();g.mix=0;g.spin=0;g.t0=performance.now();tween(g,'a',1,T.glowIn);
+    requestAnimationFrame(()=>session.classList.add('btns'));
+    later(()=>{scrim.style.transition=`opacity ${T.scrimIn}ms ease-out`;scrim.style.opacity=1},T.scrimDelay);
+    later(()=>ocrDone(lines),T.ocrWait)},T.bubbleOut)}
+function ocrDone(lines){state='session';scrim.style.transition=`opacity ${T.scrimOut}ms ease-in`;scrim.style.opacity=0;tween(g,'mix',1,T.glowSettle,easeInOut);
+  const n=lines.length;lines.forEach((l,i)=>{const b=document.createElement('div');b.className='box';
+    b.style.cssText=`left:${l.x0-7}px;top:${l.y0-3}px;width:${l.x1-l.x0+14}px;height:${l.y1-l.y0+6}px;transition-delay:${n>1?Math.round(i/(n-1)*T.boxStagger):0}ms`;boxesEl.append(b)});
+  requestAnimationFrame(()=>requestAnimationFrame(()=>boxesEl.querySelectorAll('.box').forEach(b=>b.classList.add('in'))))}
+function resetSession(){session.className='layer session';session.style.transition='none';session.style.opacity=1;frozen.replaceChildren();boxesEl.replaceChildren();
+  scrim.style.transition='none';scrim.style.opacity=0;tweens.length=0;g.a=0;g.mix=0;ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,cv.width,cv.height)}
+function closeSession(){if(state!=='session'&&state!=='capturing')return;state='closing';clearTimers();
+  session.style.transition=`opacity ${T.closeOut}ms cubic-bezier(.3,0,.8,.15)`;session.style.opacity=0;session.classList.add('closing');
+  bubble.classList.remove('hide');later(()=>{resetSession();state='idle'},T.closeOut)}
+const centerOf=el=>{const r=el.getBoundingClientRect(),p=phone.getBoundingClientRect();return{x:(r.left+r.width/2-p.left)/S,y:(r.top+r.height/2-p.top)/S}};
+function openSettings(){if(state!=='session'&&state!=='capturing')return;state='opening';clearTimers();
+  session.classList.add('toset');session.style.transition=`opacity ${T.sessionOut}ms cubic-bezier(.3,0,.8,.15)`;session.style.opacity=0;
+  render();THEME.enter(setEl,centerOf(gearBtn));setEl.classList.add('on');void setEl.offsetWidth;setEl.classList.add('in');
+  later(()=>{resetSession();state='settings'},Math.max(T.sessionOut,T.settingsIn))}
+function leaveSettings(){if(state!=='settings')return;state='leaving';
+  THEME.leave(setEl,{x:bpos.x+BS/2,y:bpos.y+BS/2});setEl.classList.remove('in');setEl.classList.add('out');
+  later(()=>{if(perm)bubble.classList.remove('hide');else{note.classList.add('show');clearTimeout(noteT);noteT=setTimeout(()=>note.classList.remove('show'),T.noteIn+T.noteHold)}},T.bubbleDelay);
+  later(()=>{setEl.classList.remove('on','out');state='idle'},T.settingsOut)}
+// ---- settings content ----
+function render(){setEl.classList.toggle('granted',perm);setEl.classList.toggle('denied',!perm);
+  setEl.querySelectorAll('[data-lang]').forEach(el=>{const on=langs.has(el.dataset.lang);el.classList.toggle('on',on);el.setAttribute('aria-checked',on)});
+  setEl.querySelectorAll('[role=switch]').forEach(el=>el.setAttribute('aria-checked',perm));
+  setEl.dataset.n=langs.size;$('speedTxt').textContent=THEME.speed[langs.size-1];
+  sysSw.classList.toggle('on',perm);sysSw.setAttribute('aria-checked',perm);
+  document.querySelectorAll('#permSeg button').forEach(b=>b.setAttribute('aria-pressed',(b.dataset.p==='1')===perm));
+  if(state==='idle'&&!setEl.classList.contains('on'))bubble.classList.toggle('hide',!perm)}
+function toggleLang(el){const k=el.dataset.lang;
+  if(langs.has(k)){if(langs.size===1){el.classList.remove('blocked');void el.offsetWidth;el.classList.add('blocked');
+      blockMsg.style.setProperty('--bx',(el.offsetLeft+el.offsetWidth/2)+'px');blockMsg.classList.add('show');
+      clearTimeout(blockT);blockT=setTimeout(()=>blockMsg.classList.remove('show'),T.msgIn+T.blockHold);return}
+    langs.delete(k)}else langs.add(k);
+  blockMsg.classList.remove('show');render()}
+function openSys(){if(state!=='settings')return;state='sys';sys.classList.add('on');void sys.offsetWidth;sys.classList.add('in')}
+function closeSys(){if(state!=='sys')return;sys.classList.remove('in');
+  setTimeout(()=>{sys.classList.remove('on');state='settings';const pc=$('permCard');if(pc){pc.classList.remove('flash');void pc.offsetWidth;pc.classList.add('flash')}},T.sysOut)}
+setEl.addEventListener('click',e=>{const a=e.target.closest('[data-act]')?.dataset.act,l=e.target.closest('[data-lang]');
+  if(state!=='settings')return;if(a==='back')leaveSettings();else if(a==='perm')openSys();else if(l)toggleLang(l)});
+setEl.addEventListener('keydown',e=>{const l=e.target.closest('[data-lang]');if(l&&(e.key===' '||e.key==='Enter')){e.preventDefault();if(state==='settings')toggleLang(l)}});
+sysSw.addEventListener('click',()=>{if(state!=='sys')return;perm=!perm;render();setTimeout(closeSys,T.sysHold)});
+sys.addEventListener('click',e=>{if(e.target.closest('[data-act=sysback]'))closeSys()});
+$('permSeg').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;perm=b.dataset.p==='1';render()});
+// ---- session buttons, bubble, keys ----
+$('xbtn').addEventListener('click',closeSession);gearBtn.addEventListener('click',openSettings);
+const home={x:W-BS-10,y:330};let bpos={...home};bubble.style.transform=`translate(${bpos.x}px,${bpos.y}px)`;
+bubble.addEventListener('click',startCapture);
+addEventListener('keydown',e=>{if(e.key!=='Escape')return;if(state==='sys')closeSys();else if(state==='settings')leaveSettings();else closeSession()});
+// ---- replay: bubble tap -> capture -> tap settings button ----
+function tap(pt){finger.style.transform=`translate(${pt.x}px,${pt.y}px)`;finger.classList.remove('go');void finger.offsetWidth;finger.classList.add('go')}
+function restore(){clearTimers();resetSession();sys.className='layer sys';setEl.classList.remove('on','in','out');note.classList.remove('show');blockMsg.classList.remove('show');
+  perm=true;state='idle';render();bubble.classList.add('hide');void bubble.offsetWidth;bubble.classList.remove('hide')}
+function replay(){restore();
+  later(()=>tap({x:bpos.x+BS/2,y:bpos.y+BS/2}),500);later(startCapture,700);
+  const tGear=700+T.bubbleOut+T.ocrWait+T.boxStagger+T.boxIn+600;
+  later(()=>{if(state==='session')tap(centerOf(gearBtn))},tGear);later(openSettings,tGear+200)}
+$('replay').addEventListener('click',replay);
+replay();
+})();
+</script>
+</body>
+</html>

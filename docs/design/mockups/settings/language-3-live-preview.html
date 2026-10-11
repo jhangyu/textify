@@ -1,0 +1,190 @@
+<!--
+Textify settings mockup :: language-3 :: Direction "Live Preview"
+Concept: the setting explains itself with a miniature frozen capture. A small sample screenshot holds Chinese, English, Japanese and Korean lines; whichever scripts are on light up as the session's Halo pills (same stagger as a2), so the user sees what will become selectable. The toggles are big session-style pills, and the speed hint is a "run timeline": one gradient segment per model laid end to end, so the bar visibly gets longer. Deselecting the last pill rubber-bands it and an inline frosted message slides in under the toggles.
+
+PALETTE (hex): lavender #A78BFA, pink #F472B6, peach #FDBA74, aqua #67E8F9, periwinkle #818CF8, violet #7C3AED, plum #4C1D95, ink #1E1B4B, mist #FAF5FF, frost #FFFFFF
+Alphas: screen bg #FAF5FF; preview card #FFFFFF + residual Halo edge (SweepGradient as a2, stroke 10dp, blur 12dp, alpha .22, drift 20000 ms/turn); preview scrim #1E1B4B 5%; text pill = a2 box pill LinearGradient #A78BFA 20% -> #F472B6 16% + glow #A78BFA 28% r12; toggle pill off #7C3AED 7%, on LinearGradient 135deg #7C3AED -> #F472B6 with glow #F472B6 30% r18; timeline track #7C3AED 8%; segment zh #A78BFA->#818CF8, ja #F472B6->#FDBA74, ko #67E8F9->#818CF8; inline notice #FFFFFF 94% + left gradient chip #F472B6->#FDBA74 + glow #A78BFA 28% r16.
+
+TIMINGS (ms)
+  Fades / motion (all <= 400): boxIn 260 (pill appear, = a2), boxStagger 140 (stagger spread, = a2), boxOut 200, toggleFill 240, segGrow 300 (timeline width, easeOut), hintCross 200, rubber 360 (scale 1 -> .92 -> 1.04 -> 1, not a fade), rejectFlash 380 (= a2 flash), noticeIn 220, noticeOut 160, touchDot 300 (demo)
+  Not fades: noticeHold 1500 (hold, = a2 toastHold); residual drift 20000 per turn (loop); demoStep 1100 (demo cadence only)
+
+NATIVE NOTES: Preview = static bundled sample bitmap (or a View drawing the sample text) under an overlay View that reuses the session's pill drawing code (Path round-rect, LinearGradient fill, setShadowLayer glow HW API 28+, skip on 26-27) - one shared drawable, no fork. Stagger per pill = startDelay round(i/(n-1)*140). Residual edge = SweepGradient stroke; API 31+ RenderEffect blur 12dp, API 26-30 the a2 concentric-stroke fallback. Toggle pills = MaterialButton-free custom View (GradientDrawable fill + alpha animator). Timeline = horizontal LinearLayout of 3 segment Views; width animated via ValueAnimator on layoutParams (or scaleX + pivot 0 to avoid relayout). Rubber = scale keyframes + performHapticFeedback(REJECT) API 30+ / VIRTUAL_KEY 26-29. Notice = in-layout capsule, translationY 8dp -> 0 + alpha. English/Latin line is tied to 中文 because the 中文 option is the one labelled "含英文".
+-->
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Textify 辨識語言 · Live Preview</title>
+<style>
+:root{--lav:#A78BFA;--pink:#F472B6;--peach:#FDBA74;--aqua:#67E8F9;--peri:#818CF8;--violet:#7C3AED;--plum:#4C1D95;--ink:#1E1B4B;--mist:#FAF5FF;--frost:#FFFFFF;
+--ui:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
+--sweep:conic-gradient(from 0deg,#A78BFA 0,#F472B6 72deg,#FDBA74 137deg,#67E8F9 202deg,#818CF8 274deg,#A78BFA 360deg)}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{min-height:100%}
+body{font-family:var(--ui);background:radial-gradient(1100px 760px at 60% 10%,#FFFFFF 0,#FAF5FF 55%,#FFF1F6 100%);color:var(--ink);min-height:100vh;display:flex;align-items:center;justify-content:center;gap:48px;padding:24px;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+.panel{width:280px;display:flex;flex-direction:column;gap:14px}
+.kicker{font-size:11px;letter-spacing:.14em;color:var(--violet);font-weight:600}
+.panel h1{font-size:30px;line-height:1.08;font-weight:700;letter-spacing:-.01em}
+.panel p{font-size:13.5px;line-height:1.6;color:rgba(30,27,75,.78)}
+.replay{align-self:flex-start;padding:11px 22px;border-radius:999px;background:linear-gradient(135deg,var(--violet),var(--pink));color:#fff;font-weight:600;box-shadow:0 8px 22px rgba(124,58,237,.28);transition:transform .15s ease-out}
+.replay:active{transform:scale(.96)}
+.phone{width:412px;height:915px;flex:none;border-radius:46px;padding:10px;background:linear-gradient(160deg,#FFFFFF,#F3E6F6);box-shadow:0 30px 80px rgba(76,29,149,.16)}
+.screen{position:relative;width:100%;height:100%;border-radius:36px;overflow:hidden;background:var(--mist);user-select:none;-webkit-user-select:none}
+.sb{height:34px;display:flex;align-items:center;justify-content:space-between;padding:6px 26px 0;font-size:14px;font-weight:500}
+.ab{height:60px;display:flex;align-items:center;gap:6px;padding:0 8px}
+.ab .back{width:48px;height:48px;border-radius:50%;display:grid;place-items:center}
+.ab h2{font-size:20px;font-weight:700}
+.sec{padding:0 22px}
+.cap{font-size:12.5px;font-weight:700;letter-spacing:.08em;color:rgba(76,29,149,.62);margin:6px 2px 10px}
+/* preview */
+.pv{position:relative;height:300px;border-radius:28px;padding:12px}
+.pv .edge{position:absolute;inset:0;border-radius:28px;background:conic-gradient(from var(--a),#A78BFA 0,#F472B6 72deg,#FDBA74 137deg,#67E8F9 202deg,#818CF8 274deg,#A78BFA 360deg);-webkit-mask:linear-gradient(#000 0 0) content-box exclude,linear-gradient(#000 0 0);mask:linear-gradient(#000 0 0) content-box exclude,linear-gradient(#000 0 0);padding:10px;filter:blur(12px);opacity:.22;animation:spin 20000ms linear infinite}
+@property --a{syntax:'<angle>';inherits:false;initial-value:0deg}
+@keyframes spin{to{--a:360deg}}
+.pv .shot{position:relative;height:100%;border-radius:20px;background:#fff;overflow:hidden;padding:14px 14px 0;display:flex;flex-direction:column;gap:9px;font-size:14.5px;color:#1d2330}
+.pv .shot::after{content:"";position:absolute;inset:0;background:rgba(30,27,75,.05);pointer-events:none}
+.bar{display:flex;align-items:center;gap:9px;padding-bottom:8px}
+.bar .av{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#ffb27a,#ff6f91)}
+.bar b{font-size:14px}
+.ln{position:relative;align-self:flex-start;padding:7px 11px;border-radius:14px;background:#f1f3f7;line-height:1.35}
+.ln.me{align-self:flex-end;background:#e8eefc}
+.ln .pill{position:absolute;inset:-3px -7px;border-radius:12px;background:linear-gradient(90deg,rgba(167,139,250,.20),rgba(244,114,182,.16));box-shadow:0 0 12px rgba(167,139,250,.28);opacity:0;transform:scale(.96);transition:opacity 200ms ease-in,transform 200ms ease-in}
+.ln.lit .pill{opacity:1;transform:none;transition:opacity 260ms ease-out,transform 260ms ease-out}
+.ln .tag{position:absolute;right:-6px;top:-9px;font-size:10px;font-weight:700;padding:1px 6px;border-radius:8px;background:#fff;color:var(--violet);box-shadow:0 1px 4px rgba(76,29,149,.12);opacity:0;transition:opacity 200ms}
+.ln.lit .tag{opacity:1}
+.ln span.t{position:relative}
+.ln.dim span.t{opacity:.55}
+/* toggles */
+.tg{display:flex;gap:10px}
+.pl{position:relative;flex:1;height:84px;border-radius:26px;background:rgba(124,58,237,.07);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px}
+.pl::before{content:"";position:absolute;inset:0;border-radius:inherit;background:linear-gradient(135deg,var(--violet),var(--pink));box-shadow:0 0 18px rgba(244,114,182,.30);opacity:0;transition:opacity 240ms ease-out}
+.pl.on::before{opacity:1}
+.pl>*{position:relative;transition:color 240ms}
+.pl .g{font-size:21px;font-weight:800;color:rgba(30,27,75,.6)}
+.pl .s{font-size:12px;font-weight:600;color:rgba(30,27,75,.55)}
+.pl.on .g,.pl.on .s{color:#fff}
+.pl.reject{animation:rubber 360ms ease-out}
+.pl.reject::after{content:"";position:absolute;inset:0;border-radius:inherit;animation:flash 380ms ease-out}
+@keyframes rubber{30%{transform:scale(.92)}65%{transform:scale(1.04)}100%{transform:none}}
+@keyframes flash{0%,100%{box-shadow:0 0 0 0 rgba(244,114,182,0)}35%{box-shadow:0 0 0 7px rgba(244,114,182,.55)}}
+.notice{height:60px;position:relative}
+.notice p{position:absolute;left:4px;top:20px;font-size:12.5px;color:rgba(30,27,75,.5);transition:opacity 160ms}
+.notice.show p{opacity:0}
+.notice div{position:absolute;left:0;right:0;top:10px;display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:18px;background:rgba(255,255,255,.94);box-shadow:0 0 16px rgba(167,139,250,.28),0 6px 18px rgba(76,29,149,.10);font-size:13.5px;font-weight:600;opacity:0;transform:translateY(-8px);transition:opacity 160ms ease-in,transform 160ms ease-in;pointer-events:none;z-index:3}
+.notice.show div{opacity:1;transform:none;transition:opacity 220ms ease-out,transform 220ms ease-out}
+.notice i{width:6px;align-self:stretch;border-radius:3px;background:linear-gradient(180deg,var(--pink),var(--peach))}
+/* timeline */
+.tl{margin-top:2px;padding:18px;border-radius:24px;background:rgba(255,255,255,.6)}
+.tlh{display:flex;justify-content:space-between;align-items:baseline}
+.tlh b{font-size:13px;font-weight:600;color:rgba(30,27,75,.62)}
+.tlh .val{font-size:18px;font-weight:800;color:var(--plum);transition:opacity 200ms}
+.track{display:flex;gap:3px;height:22px;margin:12px 0 10px;border-radius:11px;background:rgba(124,58,237,.08);overflow:hidden}
+.sg{width:0;height:100%;border-radius:11px;display:grid;place-items:center;font-size:11px;font-weight:700;color:#fff;overflow:hidden;white-space:nowrap;transition:width 300ms cubic-bezier(.2,.8,.2,1)}
+.sg.zh{background:linear-gradient(90deg,#A78BFA,#818CF8)}
+.sg.ja{background:linear-gradient(90deg,#F472B6,#FDBA74)}
+.sg.ko{background:linear-gradient(90deg,#67E8F9,#818CF8)}
+.sg.on{width:calc((100% - 6px)/3)}
+.desc{font-size:13px;line-height:1.55;color:rgba(30,27,75,.7);transition:opacity 200ms}
+.fade{opacity:0}
+.foot{font-size:12.5px;color:rgba(30,27,75,.5);text-align:center;padding-top:14px}
+.touch{position:absolute;width:44px;height:44px;margin:-22px 0 0 -22px;border-radius:50%;background:rgba(255,255,255,.55);box-shadow:0 0 14px rgba(124,58,237,.35);opacity:0;pointer-events:none;z-index:4}
+.touch.go{animation:touch 300ms ease-out}
+@keyframes touch{0%{opacity:0;transform:scale(.5)}40%{opacity:1}100%{opacity:0;transform:scale(1.3)}}
+@media (prefers-reduced-motion:reduce){*{animation-duration:1ms!important;transition-duration:1ms!important}}
+</style>
+</head>
+<body>
+<aside class="panel">
+  <div class="kicker">TEXTIFY · 辨識語言 · 方案 3</div>
+  <h1>Live Preview</h1>
+  <p>用一張迷你的凍結截圖說明設定：開啟的語言，對應的文字行就亮起擷取時的 Halo 光膠囊，使用者直接看到哪些字會變成可選取。</p>
+  <p>速度提示是「辨識時間軸」：每個模型一段，依序接起來，選越多條越長。取消最後一種語言時，按鈕回彈並在下方滑出提示。「重播」自動示範。</p>
+  <button class="replay" id="replay">重播示範</button>
+</aside>
+<div class="phone"><div class="screen" id="screen">
+  <div class="sb"><span>9:41</span><svg width="58" height="14" viewBox="0 0 58 14" fill="#1E1B4B"><path d="M2 12h3v-3H2zM7 12h3V7H7zM12 12h3V4h-3zM17 12h3V1h-3z"/><path d="M30 4.5a9 9 0 0 1 12 0l-1.5 1.6a6.8 6.8 0 0 0-9 0zM33 7.7a4.6 4.6 0 0 1 6 0L36 11z"/><rect x="45" y="2" width="11" height="10" rx="2.5"/></svg></div>
+  <div class="ab"><button class="back" aria-label="返回"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#1E1B4B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button><h2>辨識語言</h2></div>
+  <div class="sec">
+    <div class="cap">預覽：擷取後可選取的文字</div>
+    <div class="pv"><div class="edge"></div><div class="shot">
+      <div class="bar"><div class="av"></div><b>旅行群組</b></div>
+      <div class="ln" data-k="zh"><span class="pill"></span><span class="tag">中</span><span class="t">週五下午三點在車站集合</span></div>
+      <div class="ln me" data-k="zh"><span class="pill"></span><span class="tag">ABC</span><span class="t">Flight JL 802 · Gate 34B</span></div>
+      <div class="ln" data-k="ja"><span class="pill"></span><span class="tag">日</span><span class="t">東京駅 八重洲口で待ち合わせ</span></div>
+      <div class="ln me" data-k="ko"><span class="pill"></span><span class="tag">韓</span><span class="t">감사합니다, 내일 봐요!</span></div>
+      <div class="ln" data-k="ja"><span class="pill"></span><span class="tag">日</span><span class="t">ラーメン屋は駅の東側</span></div>
+    </div></div>
+  </div>
+  <div class="sec">
+    <div class="cap" style="margin-top:18px">辨識語言（可複選，至少一種）</div>
+    <div class="tg">
+      <button class="pl" data-k="zh" role="checkbox"><span class="g">中文</span><span class="s">含英文 ABC</span></button>
+      <button class="pl" data-k="ja" role="checkbox"><span class="g">日本語</span><span class="s">日文</span></button>
+      <button class="pl" data-k="ko" role="checkbox"><span class="g">한국어</span><span class="s">韓文</span></button>
+    </div>
+    <div class="notice" id="notice" role="status"><p>點一下切換；選越多種，辨識越慢</p><div><i></i>至少保留一種語言，才能辨識畫面上的文字</div></div>
+    <div class="tl" aria-live="polite">
+      <div class="tlh"><b>預估辨識時間</b><span class="val" id="val">最快 · 1×</span></div>
+      <div class="track"><div class="sg zh">中</div><div class="sg ja">日</div><div class="sg ko">韓</div></div>
+      <p class="desc" id="desc">只跑 1 個辨識模型，擷取後最快出現結果。</p>
+    </div>
+    <p class="foot">設定會在下一次擷取時生效</p>
+  </div>
+  <div class="touch" id="touch"></div>
+</div></div>
+<script>
+const state={zh:true,ja:false,ko:false};
+const HINT=[null,
+  ['最快 · 1×','只跑 1 個辨識模型，擷取後最快出現結果。'],
+  ['稍慢 · 約 2×','每次擷取要依序跑 2 個模型，等待時間約 2 倍。'],
+  ['較慢 · 約 3×','每次擷取要依序跑 3 個模型，等待時間約 3 倍。']];
+const $=s=>document.querySelector(s);
+const pills=[...document.querySelectorAll('.pl')],lns=[...document.querySelectorAll('.ln')];
+let lastN=0,noteT=0,timers=[],litT=[];
+function count(){return Object.values(state).filter(Boolean).length}
+function render(){
+  pills.forEach(p=>{const on=state[p.dataset.k];p.classList.toggle('on',on);p.setAttribute('aria-checked',on)});
+  document.querySelectorAll('.sg').forEach(s=>s.classList.toggle('on',state[[...s.classList].find(c=>c in state)]));
+  // newly lit pills stagger in top->bottom like the session (boxStagger 140 spread)
+  litT.forEach(clearTimeout);litT=[];
+  const turnOn=lns.filter(l=>state[l.dataset.k]&&!l.classList.contains('lit'));
+  lns.forEach(l=>{if(!state[l.dataset.k]){l.classList.remove('lit');l.classList.add('dim')}else l.classList.remove('dim')});
+  turnOn.forEach((l,i)=>litT.push(setTimeout(()=>l.classList.add('lit'),turnOn.length>1?Math.round(i/(turnOn.length-1)*140):0)));
+  const n=count();
+  if(n!==lastN){
+    const v=$('#val'),d=$('#desc');[v,d].forEach(e=>e.classList.add('fade'));
+    setTimeout(()=>{v.textContent=HINT[n][0];d.textContent=HINT[n][1];[v,d].forEach(e=>e.classList.remove('fade'))},lastN?200:0);
+    lastN=n;
+  }
+}
+function toggle(p){
+  const k=p.dataset.k;
+  if(state[k]&&count()===1){
+    p.classList.remove('reject');void p.offsetWidth;p.classList.add('reject');
+    const no=$('#notice');no.classList.add('show');clearTimeout(noteT);
+    noteT=setTimeout(()=>no.classList.remove('show'),220+1500);
+    return;
+  }
+  state[k]=!state[k];render();
+}
+function tapDot(el){
+  const r=el.getBoundingClientRect(),s=$('#screen').getBoundingClientRect(),d=$('#touch');
+  d.style.left=(r.left-s.left+r.width/2)+'px';d.style.top=(r.top-s.top+r.height/2)+'px';
+  d.classList.remove('go');void d.offsetWidth;d.classList.add('go');
+}
+pills.forEach(p=>p.addEventListener('click',e=>{if(e.isTrusted)stop();toggle(p)}));
+function stop(){timers.forEach(clearTimeout);timers=[]}
+function replay(){
+  stop();state.zh=true;state.ja=false;state.ko=false;
+  lns.forEach(l=>l.classList.remove('lit'));pills.forEach(p=>p.classList.remove('reject'));$('#notice').classList.remove('show');
+  render();
+  ['ja','ko','ko','ja','zh','zh'].forEach((k,i)=>timers.push(setTimeout(()=>{const p=pills.find(x=>x.dataset.k===k);tapDot(p);toggle(p)},900+i*1100)));
+}
+$('#replay').addEventListener('click',replay);
+render();replay();
+</script>
+</body>
+</html>

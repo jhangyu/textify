@@ -1,0 +1,327 @@
+<!--
+Textify overlay-permission onboarding :: Direction 2 "Living Demo"
+Concept: show, don't tell. The top half is a looping miniature of the real capture session (bubble rests on a chat app -> tap -> Halo ring blooms -> line pills stagger in -> closes), so the user sees exactly what "display over other apps" buys them. A frosted bottom sheet carries a 2-node progress track (顯示泡泡 -> 擷取畫面); the track fills on return and the system consent dialog follows.
+
+PALETTE (hex): lavender #A78BFA, pink #F472B6, peach #FDBA74, aqua #67E8F9, periwinkle #818CF8, violet #7C3AED, plum #4C1D95, ink #1E1B4B, mist #FAF5FF, frost #FFFFFF; secondary text #6B5FA8; denied text #9A3412
+Alphas: demo stage fill LinearGradient #A78BFA 14% -> #67E8F9 12%; mini halo = a2 SweepGradient ring alpha .75 (bloom) settling to .30; mini pills LinearGradient #A78BFA 26% -> #F472B6 22%; ghost bubble grayscale + alpha .45; sheet surface #FFFFFF 94% + shadow #7C3AED 14% r40; track rest #7C3AED 12%, track fill LinearGradient #A78BFA -> #F472B6 -> #FDBA74; denied node #FDBA74 30% fill; system dialog scrim #000000 32% (system-owned)
+TIMINGS (ms)
+  Fades / motion (all <= 400): introIn 360 (stagger 60), screenSwap 300, copySwap out 120 / in 220, sheetRise 360, trackFill 400, nodeCheck 260, ghostSwap 300, peachPulse 400 (x2), dialogScrimIn 220, dialogIn 260, dialogOut 160, appClose 300, bubbleIn 300, toastIn 220, toastOut 160
+  Demo loop (period 4800, all inner fades <= 400): bubble tap at 1000 (press 96), bubbleOut 192, haloIn 350 from 1150, pills in 288 each, stagger 72 per pill from 1490, haloSettle 400 from 1900, sessionOut 288 from 3800, bubbleIn 288 from 4080
+  Not fades: demo loop period 4800, haloSpin 2400 (loop), grantedHold 900, toastHold 1800
+NATIVE NOTES:
+  Demo = one custom View (Canvas): mini screen is a pre-rendered Bitmap; bubble/pills = drawRoundRect with LinearGradient; timeline = single ValueAnimator(0..4800, INFINITE, linear) whose fraction drives every element (keeps it one invalidate per frame). Mini halo = a2 recipe scaled x.6 (stroke 26dp -> 16dp), API 31+ RenderEffect blur 18dp on that View's RenderNode, API 26-30: 3 concentric strokes alpha .5/.25/.1. Pause the animator in onPause() and when "still not granted" (ghost state is a static frame).
+  Sheet = MaterialCardView-like background: GradientDrawable #FFFFFF@94% radius 32dp top, elevation via setShadowLayer (API 28+), plain fill on 26-27. Track = two-colour LinearGradient clipped to a 6dp round rect; fill animated with a ValueAnimator on clip width (400 ms).
+  Return detection / jump / consent: same as direction 1 (canDrawOverlays on onResume + 300 ms recheck on API 26; API 30+ lands on the app list; API 34+ createConfigForDefaultDisplay()).
+-->
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Textify 權限引導 · Living Demo</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:ui-rounded,"SF Pro Rounded","PingFang TC","Noto Sans TC",system-ui,sans-serif;color:#1E1B4B;overflow:hidden;-webkit-font-smoothing:antialiased;
+  background:radial-gradient(600px 420px at 8% 12%,rgba(167,139,250,.35),rgba(167,139,250,0) 70%),radial-gradient(520px 420px at 92% 18%,rgba(244,114,182,.25),rgba(244,114,182,0) 70%),radial-gradient(640px 480px at 70% 100%,rgba(103,232,249,.28),rgba(103,232,249,0) 70%),radial-gradient(500px 380px at 10% 95%,rgba(253,186,116,.28),rgba(253,186,116,0) 70%),#FAF5FF}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+.stage{height:100%;display:flex;align-items:center;justify-content:center;gap:48px;padding:24px}
+/* ---------- mockup control panel (not product UI) ---------- */
+.panel{width:300px;max-height:100%;overflow:auto;display:flex;flex-direction:column;gap:16px}
+.panel .kicker{font-size:11px;letter-spacing:.14em;opacity:.6}
+.panel h1{font-size:30px;font-weight:500;line-height:1.05}
+.panel p{font-size:13.5px;line-height:1.55;opacity:.8}
+.pbtn{padding:10px 18px;border-radius:999px;background:#1E1B4B;color:#FAF5FF;font-weight:600;font-size:14px;align-self:flex-start}
+.pbtn.s{background:#EFE7FC;color:#1E1B4B;font-size:13px;padding:8px 14px}
+.seg{display:flex;gap:4px;background:#EFE7FC;border-radius:999px;padding:4px;align-self:flex-start}
+.seg button{padding:7px 14px;border-radius:999px;font-size:13px}
+.seg button.on{background:#fff;box-shadow:0 2px 8px rgba(124,58,237,.18);font-weight:600}
+.grp{display:flex;flex-direction:column;gap:8px}
+.grp>b{font-size:12px;opacity:.65;font-weight:600}
+.row{display:flex;flex-wrap:wrap;gap:6px}
+.help{font-size:12px;line-height:1.6;opacity:.7}
+/* ---------- device (light bezel) ---------- */
+.device{padding:10px;border-radius:48px;background:linear-gradient(145deg,#FFFFFF,#EDE6FB);box-shadow:0 30px 80px -24px rgba(76,29,149,.35)}
+.phone-wrap{width:calc(412px*var(--s,1));height:calc(915px*var(--s,1))}
+.phone{width:412px;height:915px;transform:scale(var(--s,1));transform-origin:0 0;position:relative;border-radius:38px;overflow:hidden;background:#FAF5FF;user-select:none;-webkit-user-select:none}
+.scr{position:absolute;inset:0;opacity:0;pointer-events:none;transition:opacity 300ms cubic-bezier(.2,0,0,1),transform 300ms cubic-bezier(.2,0,0,1)}
+.scr.on{opacity:1;pointer-events:auto;transform:none}
+.sb{height:36px;display:flex;align-items:center;justify-content:space-between;padding:8px 26px 0;font-size:14px;font-weight:600}
+/* ---------- product: onboarding (Living Demo) ---------- */
+#sIntro{background:radial-gradient(380px 300px at 20% 10%,rgba(167,139,250,.30),rgba(167,139,250,0) 70%),radial-gradient(360px 300px at 90% 40%,rgba(103,232,249,.22),rgba(103,232,249,0) 70%),radial-gradient(300px 240px at 30% 60%,rgba(253,186,116,.20),rgba(253,186,116,0) 70%),#FAF5FF}
+.blk{opacity:0;transform:translateY(14px)}
+.intro-in .blk{animation:blkIn 360ms cubic-bezier(.2,0,0,1) both;animation-delay:calc(var(--i)*60ms)}
+@keyframes blkIn{to{opacity:1;transform:none}}
+.stagebox{position:absolute;left:26px;right:26px;top:54px;height:420px;border-radius:34px;background:linear-gradient(160deg,rgba(167,139,250,.14),rgba(103,232,249,.12));overflow:hidden}
+.mini{position:absolute;left:50%;top:26px;width:212px;height:400px;margin-left:-106px;border-radius:26px 26px 0 0;background:#F3F5F8;overflow:hidden;box-shadow:0 18px 40px -12px rgba(76,29,149,.30);font-family:Roboto,"Noto Sans TC","PingFang TC",system-ui,sans-serif}
+.mini .hd{height:42px;background:#fff;display:flex;align-items:center;gap:8px;padding:0 10px;font-size:11px;font-weight:600;color:#1d2330}
+.mini .hd i{width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,#ffb27a,#ff6f91)}
+.mini .ms{padding:10px 10px;display:flex;flex-direction:column;gap:8px}
+.mini .m{max-width:82%;padding:6px 9px;border-radius:12px;background:#fff;font-size:10.5px;line-height:1.45;color:#1d2330;align-self:flex-start}
+.mini .m.me{align-self:flex-end;background:#2f6bff;color:#fff}
+.ln{position:relative;display:inline}
+.ln::before{content:"";position:absolute;left:-5px;right:-5px;top:-2px;bottom:-2px;border-radius:999px;background:linear-gradient(90deg,rgba(167,139,250,.26),rgba(244,114,182,.22));box-shadow:0 0 8px rgba(167,139,250,.30);opacity:0;transform:scale(.9);animation:pill 4800ms linear infinite;animation-delay:calc(var(--d,0)*72ms)}
+@keyframes pill{0%,31%{opacity:0;transform:scale(.9)}37%,79%{opacity:1;transform:none}85%,100%{opacity:0;transform:none}}
+#miniHalo{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.mb{position:absolute;right:6px;top:176px;width:36px;height:36px;border-radius:50%;background:radial-gradient(circle at 50% 38%,#fff 55%,#F3EDFF);color:#7C3AED;box-shadow:0 4px 12px rgba(124,58,237,.30),0 0 14px rgba(244,114,182,.35);display:flex;align-items:center;justify-content:center;animation:mb 4800ms linear infinite}
+@keyframes mb{0%,20%{opacity:1;transform:none}21%{transform:scale(.9)}23%{opacity:1;transform:none}27%,85%{opacity:0;transform:scale(.7)}91%,100%{opacity:1;transform:none}}
+.mt{position:absolute;right:6px;top:176px;width:36px;height:36px;border-radius:50%;background:rgba(120,110,150,.32);opacity:0;animation:mt 4800ms linear infinite}
+@keyframes mt{0%,18%{opacity:0;transform:scale(1.6)}21%{opacity:1;transform:scale(.8)}26%,100%{opacity:0;transform:scale(.8)}}
+.live,.ghost{position:absolute;inset:0;transition:opacity 300ms}
+.ghost{opacity:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+.ghost .gb{width:36px;height:36px;border-radius:50%;background:#fff;color:#7C3AED;display:flex;align-items:center;justify-content:center;filter:grayscale(1);opacity:.45;position:absolute;right:6px;top:176px}
+.ghost .gp{position:absolute;right:-6px;top:164px;width:60px;height:60px;border-radius:50%;background:radial-gradient(circle,rgba(253,186,116,0) 45%,rgba(253,186,116,.55) 62%,rgba(253,186,116,0) 75%);opacity:0}
+.st-denied .ghost .gp{animation:gp 400ms ease-out 2}
+@keyframes gp{0%{opacity:.9;transform:scale(.8)}100%{opacity:0;transform:scale(1.3)}}
+.chip{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);white-space:nowrap;padding:9px 16px;border-radius:999px;background:rgba(255,255,255,.94);color:#9A3412;font-size:13px;font-weight:600;box-shadow:0 8px 24px rgba(253,186,116,.35)}
+.st-denied .live{opacity:0}.st-denied .ghost{opacity:1}
+.st-denied .live *,.st-denied .live *::before{animation-play-state:paused}
+.sheet{position:absolute;left:0;right:0;bottom:0;top:448px;border-radius:32px 32px 0 0;background:rgba(255,255,255,.94);box-shadow:0 -10px 40px rgba(124,58,237,.14);padding:26px 28px 0;display:flex;flex-direction:column}
+.track{display:flex;align-items:center;gap:10px;font-size:12.5px;font-weight:600;color:#6B5FA8}
+.node{display:flex;align-items:center;gap:7px;white-space:nowrap}
+.node b{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;background:rgba(124,58,237,.12);color:#4C1D95;transition:background 260ms,color 260ms}
+.node.cur b{background:linear-gradient(135deg,#A78BFA,#F472B6);color:#fff;box-shadow:0 0 12px rgba(244,114,182,.45)}
+.trk{flex:1;height:6px;border-radius:3px;background:rgba(124,58,237,.12);overflow:hidden}
+.trk i{display:block;height:100%;width:100%;transform:scaleX(0);transform-origin:0 50%;border-radius:3px;background:linear-gradient(90deg,#A78BFA,#F472B6,#FDBA74);transition:transform 400ms cubic-bezier(.2,0,0,1)}
+.st-granted .trk i{transform:none}
+.st-granted .n2 b{background:linear-gradient(135deg,#F472B6,#FDBA74);color:#fff;box-shadow:0 0 12px rgba(253,186,116,.55)}
+.st-granted .n1 b{background:rgba(124,58,237,.16);color:#7C3AED}
+.st-denied .n1 b{background:rgba(253,186,116,.30);color:#9A3412;box-shadow:none}
+.n1 .ck{display:none}.st-granted .n1 .ck{display:block}.st-granted .n1 .nm{display:none}
+.copy{transition:opacity 120ms ease-in}.copy.swap{opacity:0}
+#kickT{display:none}
+h2{font-size:26px;line-height:1.28;font-weight:700;margin:20px 0 10px;letter-spacing:-.01em}
+.lead{font-size:15px;line-height:1.6;color:#4C4380}
+.actions{margin-top:auto;padding:16px 0 34px;display:flex;gap:10px}
+.cta{flex:1;height:56px;border-radius:999px;color:#fff;font-size:16.5px;font-weight:700;background:linear-gradient(100deg,#7C3AED,#A855F7 55%,#EC4899);box-shadow:0 10px 26px rgba(124,58,237,.30);transition:transform 120ms,opacity 220ms}
+.cta:active{transform:scale(.97)}
+.later{height:56px;padding:0 20px;border-radius:999px;font-size:15px;color:#4C1D95;background:rgba(124,58,237,.08);transition:opacity 220ms}
+.st-granted .cta,.st-granted .later{opacity:0;pointer-events:none}
+.ready{position:absolute;left:0;right:0;bottom:56px;text-align:center;font-size:14px;color:#6B5FA8;opacity:0;transition:opacity 220ms}
+.st-granted .ready{opacity:1}
+.ready b{display:inline-block;width:6px;height:6px;border-radius:50%;background:#A78BFA;margin:0 2px;animation:dot 1200ms infinite}
+.ready b:nth-child(2){animation-delay:.15s}.ready b:nth-child(3){animation-delay:.3s}
+@keyframes dot{0%,60%,100%{opacity:.3}30%{opacity:1}}
+@media (prefers-reduced-motion:reduce){.ln::before,.mb,.mt{animation:none!important}.ln::before{opacity:1}}
+.st-denied .ln::before{animation:none;opacity:0}
+.facts{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px;transition:opacity 220ms}
+.facts span{padding:7px 12px;border-radius:999px;background:linear-gradient(135deg,rgba(167,139,250,.14),rgba(244,114,182,.10));font-size:12.5px;color:#4C1D95}
+.st-granted .facts{opacity:.4}
+/* ---------- mock Android system settings (system-owned UI, Material 3 light) ---------- */
+.sys{background:#F8F9FF;color:#1A1B20;font-family:Roboto,"Noto Sans TC","PingFang TC",system-ui,sans-serif;transform:translateX(28px)}
+.sys .bar{display:flex;align-items:center;gap:14px;padding:14px 12px 10px}
+.sys .bk{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center}
+.sys .bk:active{background:rgba(0,0,0,.06)}
+.sys h3{font-size:28px;font-weight:400;padding:26px 24px 18px;line-height:1.25}
+.sys .it{display:flex;align-items:center;gap:16px;padding:14px 24px;cursor:pointer}
+.sys .it:active{background:rgba(63,90,169,.08)}
+.sys .ai{width:40px;height:40px;border-radius:12px;flex:none}
+.sys .it b{font-weight:400;font-size:16px;display:block}
+.sys .it small{font-size:13.5px;color:#5C5F6B}
+.sys .sec{font-size:13.5px;color:#3F5AA9;padding:18px 24px 6px;font-weight:500}
+.tfx{background:linear-gradient(135deg,#FFFFFF,#EFE7FC);display:flex;align-items:center;justify-content:center;color:#7C3AED;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.apphead{display:flex;flex-direction:column;align-items:center;gap:10px;padding:18px 0 26px}
+.apphead .ai{width:64px;height:64px;border-radius:18px}
+.apphead b{font-size:20px;font-weight:400}
+.swrow{display:flex;align-items:center;gap:16px;padding:18px 24px;margin:0 16px;border-radius:24px;background:#E8EBFA;cursor:pointer}
+.swrow span{flex:1;font-size:17px}
+.sw{width:52px;height:32px;border-radius:16px;background:#C9CDDB;position:relative;transition:background 200ms}
+.sw::after{content:"";position:absolute;left:8px;top:8px;width:16px;height:16px;border-radius:50%;background:#73778A;transition:all 200ms cubic-bezier(.2,0,0,1)}
+.sw.on{background:#3F5AA9}.sw.on::after{left:24px;top:4px;width:24px;height:24px;background:#fff}
+.sys .note{font-size:14px;line-height:1.55;color:#5C5F6B;padding:18px 28px}
+/* ---------- mock system screen-capture consent dialog (system-owned) ---------- */
+.dlg{position:absolute;inset:0;background:rgba(0,0,0,.32);display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity 220ms;z-index:10}
+.dlg.on{opacity:1;pointer-events:auto}
+.dlg .card{width:328px;border-radius:28px;background:#F3F4FB;color:#1A1B20;padding:24px 24px 18px;font-family:Roboto,"Noto Sans TC","PingFang TC",system-ui,sans-serif;transform:scale(.92);transition:transform 260ms cubic-bezier(.2,0,0,1.2)}
+.dlg.on .card{transform:none}
+.dlg .di{display:flex;justify-content:center;color:#3F5AA9;margin-bottom:14px}
+.dlg h4{font-size:22px;font-weight:400;text-align:center;line-height:1.3;margin-bottom:14px}
+.dlg .pick{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-radius:12px;background:#E3E6F3;font-size:14.5px;margin-bottom:14px}
+.dlg p{font-size:14px;line-height:1.55;color:#44474F}
+.dlg .btns{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
+.dlg .btns button{padding:10px 16px;border-radius:999px;color:#3F5AA9;font-weight:500;font-size:14.5px}
+.dlg .btns button.p{background:#3F5AA9;color:#fff}
+/* ---------- home screen after the app closes ---------- */
+#sHome{background:radial-gradient(380px 300px at 20% 20%,rgba(167,139,250,.35),rgba(167,139,250,0) 70%),radial-gradient(380px 320px at 90% 75%,rgba(103,232,249,.30),rgba(103,232,249,0) 70%),radial-gradient(300px 260px at 15% 85%,rgba(253,186,116,.30),rgba(253,186,116,0) 70%),#F7F3FF}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:26px 0;padding:120px 22px 0;justify-items:center}
+.grid i{width:58px;height:58px;border-radius:20px;background:rgba(255,255,255,.75);box-shadow:0 4px 12px rgba(76,29,149,.08)}
+.dock{position:absolute;left:24px;right:24px;bottom:40px;height:84px;border-radius:32px;background:rgba(255,255,255,.55);display:flex;justify-content:space-around;align-items:center}
+.dock i{width:56px;height:56px;border-radius:20px;background:rgba(255,255,255,.85)}
+.bubble{position:absolute;right:10px;top:330px;width:56px;height:56px;border-radius:50%;background:radial-gradient(circle at 50% 38%,#fff 55%,#F3EDFF);color:#7C3AED;box-shadow:0 6px 18px rgba(124,58,237,.28),0 0 22px rgba(244,114,182,.35);display:flex;align-items:center;justify-content:center;opacity:0;transform:scale(.7);transition:opacity 300ms cubic-bezier(.2,0,0,1),transform 300ms cubic-bezier(.2,0,0,1.3)}
+.bubble.on{opacity:1;transform:none}
+.toast{position:absolute;left:50%;bottom:150px;display:flex;align-items:center;gap:10px;padding:10px 18px 10px 10px;border-radius:999px;background:rgba(255,255,255,.94);box-shadow:0 10px 30px rgba(124,58,237,.25);font-size:14px;white-space:nowrap;opacity:0;transform:translate(-50%,10px) scale(.92);transition:opacity 160ms ease-in,transform 160ms ease-in;z-index:12;pointer-events:none}
+.toast.on{opacity:1;transform:translate(-50%,0);transition:opacity 220ms,transform 220ms cubic-bezier(.2,0,0,1.25)}
+.orb{width:24px;height:24px;flex:none;border-radius:50%;background:conic-gradient(#A78BFA,#F472B6,#FDBA74,#67E8F9,#818CF8,#A78BFA);position:relative}
+.orb::after{content:"";position:absolute;inset:6px;border-radius:50%;background:#fff}
+.orb.dim{filter:grayscale(1) opacity(.6)}
+.finger{position:absolute;left:0;top:0;width:52px;height:52px;margin:-26px 0 0 -26px;border-radius:50%;background:rgba(120,110,150,.32);pointer-events:none;z-index:30;opacity:0}
+.finger.go{animation:finger 520ms ease-out}
+@keyframes finger{0%{opacity:0;scale:1.6}35%{opacity:1;scale:.8}100%{opacity:0;scale:.8}}
+@media (prefers-reduced-motion:reduce){.ring,.aura,.ready b{animation:none!important}}
+@media (max-width:820px){body{overflow:auto}.stage{flex-direction:column;height:auto}.panel{width:100%;max-width:440px}}
+</style>
+</head>
+<body>
+<main class="stage">
+  <aside class="panel">
+    <div><div class="kicker">TEXTIFY · 權限引導 · 2 / 3</div><h1>Living Demo</h1></div>
+    <p>先示範再請求。上半部循環播放真實擷取流程的縮小版（泡泡 → 點擊 → Halo 光圈綻放 → 文字膠囊逐行出現），讓使用者看懂權限換到什麼；下方毛玻璃面板的兩段進度軌在返回時填滿，接著出現系統擷取同意對話框。</p>
+    <button class="pbtn" id="replay">▶ 重播 Replay</button>
+    <div class="grp"><b>重播時，從系統設定返回的結果</b>
+      <div class="seg" id="seg"><button data-v="granted" class="on">已允許</button><button data-v="denied">仍未允許</button></div></div>
+    <div class="grp"><b>直接跳到</b>
+      <div class="row"><button class="pbtn s" data-j="intro">說明畫面</button><button class="pbtn s" data-j="granted">返回：已允許</button><button class="pbtn s" data-j="denied">返回：仍未允許</button><button class="pbtn s" data-j="dialog">擷取同意對話框</button></div></div>
+    <div class="help">手動操作：點「開啟顯示權限」→ 在清單點 Textify → 切換開關 → 按左上返回鍵兩次。對話框按「開始」＝泡泡出現、App 自動關閉；按「取消」＝提示後關閉。</div>
+  </aside>
+</aside>
+  <div class="device"><div class="phone-wrap"><div class="phone" id="phone">
+
+    <section class="scr on" id="sIntro">
+      <div class="sb blk" style="--i:0"><span>9:41</span><span>▴ ▮</span></div>
+      <div class="stagebox blk" style="--i:1">
+        <div class="mini">
+          <div class="hd"><i></i>設計小組</div>
+          <div class="ms">
+            <div class="m"><span class="ln" style="--d:0">下週的 workshop 資料好了嗎？</span></div>
+            <div class="m"><span class="ln" style="--d:1">地點：松仁路 100 號 12F</span></div>
+            <div class="m me"><span class="ln" style="--d:2">好，晚點傳 slides 給大家</span></div>
+            <div class="m"><span class="ln" style="--d:3">Wi-Fi：Textify-2026</span></div>
+            <div class="m"><span class="ln" style="--d:4">報名截止 10/18 (Sat)</span></div>
+            <div class="m me"><span class="ln" style="--d:5">收到，謝謝！</span></div>
+          </div>
+          <div class="live"><canvas id="miniHalo" width="424" height="800"></canvas><div class="mb"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M8.5 9h7M12 9v7"/></svg></div><div class="mt"></div></div>
+          <div class="ghost"><div class="gp"></div><div class="gb"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M8.5 9h7M12 9v7"/></svg></div></div>
+        </div>
+        <div class="ghost" style="z-index:2"><div class="chip">沒有權限，泡泡無法出現</div></div>
+      </div>
+      <div class="sheet blk" style="--i:2">
+        <div class="track"><span class="node n1 cur"><b><span class="nm">1</span><svg class="ck" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></b>顯示泡泡</span><span class="trk"><i></i></span><span class="node n2"><b>2</b>擷取畫面</span></div>
+        <div class="copy" id="copy"><span id="kickT"></span>
+          <h2 id="title">一點泡泡，<br>畫面上的字都能複製</h2>
+          <p class="lead" id="lead">泡泡要能浮在其他 App 上層，需要你開啟「顯示在其他應用程式上層」權限。</p>
+        </div>
+        <div class="facts"><span>只在點泡泡時讀取畫面</span><span>文字辨識在裝置上完成</span><span>拖到底部 ✕ 即關閉</span></div>
+        <div class="actions"><button class="later" id="later">稍後</button><button class="cta" id="cta"><span id="ctaT">開啟顯示權限</span></button></div>
+        <div class="ready">準備螢幕擷取 <b></b><b></b><b></b></div>
+      </div>
+    </section>
+
+    
+<section class="scr sys" id="sList">
+      <div class="sb"><span>9:41</span><span>▴ ▮</span></div>
+      <div class="bar"><button class="bk" data-back="list" aria-label="返回"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#1A1B20" stroke-width="2" stroke-linecap="round"><path d="M19 12H5M11 6l-6 6 6 6"/></svg></button></div>
+      <h3>在其他應用程式上層顯示</h3>
+      <div class="sec">應用程式</div>
+      <div class="it"><i class="ai" style="background:#CFE3D8"></i><div><b>地圖</b><small>允許</small></div></div>
+      <div class="it"><i class="ai" style="background:#F7D7C4"></i><div><b>訊息</b><small>允許</small></div></div>
+      <div class="it" id="rowTfx"><i class="ai tfx"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M8.5 9h7M12 9v7"/></svg></i><div><b>Textify</b><small id="tfxSt">不允許</small></div></div>
+      <div class="it"><i class="ai" style="background:#D6DCF5"></i><div><b>相簿</b><small>不允許</small></div></div>
+      <div class="it"><i class="ai" style="background:#F3D3E4"></i><div><b>音樂</b><small>不允許</small></div></div>
+    </section>
+
+    <section class="scr sys" id="sApp">
+      <div class="sb"><span>9:41</span><span>▴ ▮</span></div>
+      <div class="bar"><button class="bk" data-back="app" aria-label="返回"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#1A1B20" stroke-width="2" stroke-linecap="round"><path d="M19 12H5M11 6l-6 6 6 6"/></svg></button></div>
+      <h3>在其他應用程式上層顯示</h3>
+      <div class="apphead"><i class="ai tfx"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M8.5 9h7M12 9v7"/></svg></i><b>Textify</b></div>
+      <div class="swrow" id="swRow"><span>允許在其他應用程式上層顯示</span><i class="sw" id="sw"></i></div>
+      <p class="note">這項權限允許應用程式在你使用的其他應用程式上層顯示內容。這可能會干擾你使用其他應用程式，或改變其他應用程式的顯示內容。</p>
+    </section>
+
+    <section class="scr" id="sHome"><div class="sb"><span>9:41</span><span>▴ ▮</span></div>
+      <div class="grid"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      <div class="dock"><i></i><i></i><i></i><i></i></div>
+      <div class="bubble" id="bubble"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M8.5 9h7M12 9v7"/></svg></div>
+    </section>
+
+    <div class="dlg" id="dlg"><div class="card">
+      <div class="di"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg></div>
+      <h4>要讓 Textify 開始錄製或投放內容嗎？</h4>
+      <div class="pick"><span>分享整個螢幕</span><span>▾</span></div>
+      <p>當你分享、錄製或投放內容時，Textify 可以存取螢幕上顯示或裝置播放的所有內容，因此請謹慎處理密碼、付款資料、訊息、相片、音訊和影片等資訊。</p>
+      <div class="btns"><button id="dCancel">取消</button><button class="p" id="dStart">開始</button></div>
+    </div></div>
+    <div class="toast" id="toast"></div>
+    <div class="finger" id="finger"></div>
+  </div></div></div>
+</main>
+<script>
+(function(){
+var T={screenSwap:300,copyOut:120,grantedHold:900,dialogOut:160,appClose:300,toastIn:220,toastHold:1800,tapLead:180};
+var $=function(id){return document.getElementById(id)};
+var phone=$('phone'),intro=$('sIntro'),sw=$('sw'),dlg=$('dlg'),toast=$('toast'),finger=$('finger'),bubble=$('bubble');
+var S=1;function fit(){S=Math.min(1,(innerHeight-70)/935);document.documentElement.style.setProperty('--s',S)}fit();addEventListener('resize',fit);
+var timers=[];function later(f,ms){timers.push(setTimeout(f,ms))}function clearTimers(){timers.forEach(clearTimeout);timers=[]}
+var outcome='granted',granted=false,state='intro',toastT=0;
+var COPY={
+  intro:{k:'',t:'一點泡泡，<br>畫面上的字都能複製',l:'泡泡要能浮在其他 App 上層，需要你開啟「顯示在其他應用程式上層」權限。',c:'開啟顯示權限'},
+  denied:{k:'',t:'泡泡還出不來',l:'系統設定裡 Textify 的開關仍是關閉的。在清單中點 Textify，打開開關後按返回即可。',c:'再開一次設定'},
+  granted:{k:'',t:'泡泡已就位',l:'最後一步：系統會詢問是否允許擷取畫面。Android 每次啟動泡泡都會問一次。',c:'開啟顯示權限'}
+};
+function show(id){['sIntro','sList','sApp','sHome'].forEach(function(s){$(s).classList.toggle('on',s===id)})}
+function setCopy(key,instant){var c=COPY[key],el=$('copy');
+  function apply(){$('kickT').textContent=c.k;$('title').innerHTML=c.t;$('lead').textContent=c.l;$('ctaT').textContent=c.c;el.classList.remove('swap')}
+  if(instant){apply();return}el.classList.add('swap');later(apply,T.copyOut)}
+function setIntroState(s){intro.classList.remove('st-denied','st-granted');void intro.offsetWidth;if(s)intro.classList.add('st-'+s)}
+function setSwitch(v){granted=v;sw.classList.toggle('on',v);$('tfxSt').textContent=v?'允許':'不允許'}
+function showToast(html){toast.innerHTML=html;toast.classList.remove('on');void toast.offsetWidth;toast.classList.add('on');clearTimeout(toastT);toastT=setTimeout(function(){toast.classList.remove('on')},T.toastIn+T.toastHold)}
+function reset(){clearTimers();state='intro';setSwitch(false);setIntroState(null);setCopy('intro',true);dlg.classList.remove('on');bubble.classList.remove('on');toast.classList.remove('on');
+  show('sIntro');intro.classList.remove('intro-in');void intro.offsetWidth;intro.classList.add('intro-in')}
+function goSettings(){if(state!=='intro'&&state!=='denied')return;state='sys';show('sList')}
+function returned(){state=granted?'granted':'denied';show('sIntro');
+  // ponytail: copy/visual swap waits for the screen fade, so the change is seen, not hidden behind the transition
+  later(function(){setIntroState(state);setCopy(state)},T.screenSwap-100);
+  if(granted)later(openDialog,T.screenSwap+T.grantedHold)}
+function openDialog(){state='dialog';dlg.classList.add('on')}
+function closeApp(on){dlg.classList.remove('on');state='done';
+  later(function(){show('sHome');later(function(){if(on){bubble.classList.add('on');showToast('<i class="orb"></i>Textify 已啟動 · 點一下泡泡即可擷取文字')}else showToast('<i class="orb dim"></i>未允許擷取畫面，Textify 已關閉')},T.appClose)},T.dialogOut)}
+$('cta').addEventListener('click',goSettings);
+$('later').addEventListener('click',function(){if(state!=='intro'&&state!=='denied')return;state='done';show('sHome');later(function(){showToast('<i class="orb dim"></i>開啟權限後才能使用泡泡')},T.appClose)});
+$('rowTfx').addEventListener('click',function(){if(state==='sys')show('sApp')});
+$('swRow').addEventListener('click',function(){if(state==='sys')setSwitch(!granted)});
+document.querySelectorAll('[data-back]').forEach(function(b){b.addEventListener('click',function(){if(state!=='sys')return;if(b.dataset.back==='app')show('sList');else returned()})});
+$('dStart').addEventListener('click',function(){if(state==='dialog')closeApp(true)});
+$('dCancel').addEventListener('click',function(){if(state==='dialog')closeApp(false)});
+addEventListener('keydown',function(e){if(e.key!=='Escape')return;if(state==='sys'){if($('sApp').classList.contains('on'))show('sList');else returned()}else if(state==='dialog')closeApp(false)});
+// ---------- scripted demo: a finger taps real controls ----------
+function tap(el){var r=el.getBoundingClientRect(),p=phone.getBoundingClientRect();
+  finger.style.transform='translate('+((r.left+r.width/2-p.left)/S)+'px,'+((r.top+r.height/2-p.top)/S)+'px)';
+  finger.classList.remove('go');void finger.offsetWidth;finger.classList.add('go');later(function(){el.click()},T.tapLead)}
+function replay(){reset();var t=1500;
+  later(function(){tap($('cta'))},t);
+  later(function(){tap($('rowTfx'))},t+=1000);
+  if(outcome==='granted')later(function(){tap($('swRow'))},t+=900);
+  later(function(){tap(document.querySelector('[data-back=app]'))},t+=900);
+  later(function(){tap(document.querySelector('[data-back=list]'))},t+=700);
+  if(outcome==='granted')later(function(){tap($('dStart'))},t+=T.screenSwap+T.grantedHold+1500)}
+function jump(k){reset();intro.classList.remove('intro-in');intro.querySelectorAll('.blk').forEach(function(b){b.style.opacity=1;b.style.transform='none'});
+  if(k==='granted'||k==='denied'){setSwitch(k==='granted');state=k;setIntroState(k);setCopy(k,true);if(k==='granted')later(openDialog,T.grantedHold)}
+  if(k==='dialog'){setSwitch(true);state='granted';setIntroState('granted');setCopy('granted',true);openDialog()}}
+function clearJump(){intro.querySelectorAll('.blk').forEach(function(b){b.style.opacity='';b.style.transform=''})}
+$('replay').addEventListener('click',function(){clearJump();replay()});
+document.querySelectorAll('[data-j]').forEach(function(b){b.addEventListener('click',function(){clearJump();if(b.dataset.j==='intro')reset();else jump(b.dataset.j)})});
+document.querySelectorAll('#seg button').forEach(function(b){b.addEventListener('click',function(){document.querySelectorAll('#seg button').forEach(function(x){x.classList.toggle('on',x===b)});outcome=b.dataset.v;clearJump();replay()})});
+replay();
+})();
+</script>
+<script>
+/* mini Halo ring for the looping demo: same SweepGradient + blurred round-rect stroke recipe as a2-halo, scaled x.6 */
+(function(){
+var cv=document.getElementById('miniHalo'),ctx=cv.getContext('2d'),intro=document.getElementById('sIntro'),W=212,H=400,t0=performance.now();
+ctx.scale(2,2);
+var STOPS=[[0,'#A78BFA'],[.2,'#F472B6'],[.38,'#FDBA74'],[.56,'#67E8F9'],[.76,'#818CF8'],[1,'#A78BFA']];
+function cl(x){return Math.max(0,Math.min(1,x))}function eo(x){return 1-Math.pow(1-x,3)}
+function ring(style,w,blur,a){ctx.save();ctx.globalAlpha=a;ctx.filter='blur('+blur+'px)';ctx.strokeStyle=style;ctx.lineWidth=w;ctx.beginPath();ctx.roundRect(0,0,W,H+40,26);ctx.stroke();ctx.restore()}
+function frame(now){requestAnimationFrame(frame);
+  if(!intro.classList.contains('on')||intro.classList.contains('st-denied'))return;
+  // ponytail: phase mirrors the CSS 4800 ms keyframes, both start at page load so they stay in step
+  var p=(now-t0)%4800,a=cl((p-1150)/350)*(1-cl((p-3800)/288)),mix=eo(cl((p-1900)/400)),bloom=1-eo(cl((p-1150)/400));
+  ctx.clearRect(0,0,W,H);if(a<=0)return;
+  var g=ctx.createConicGradient(p/2400*Math.PI*2,W/2,H/2);STOPS.forEach(function(s){g.addColorStop(s[0],s[1])});
+  ring(g,(26+40*bloom)*(1-mix)+16*mix,18,a*(.75-.45*mix));
+  if(mix<1)ring(g,7,4,a*(1-mix)*.9)}
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
