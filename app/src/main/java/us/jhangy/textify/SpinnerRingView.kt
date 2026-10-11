@@ -58,28 +58,19 @@ class SpinnerRingView @JvmOverloads constructor(context: Context, attrs: Attribu
         canvas.restoreToCount(saved)
     }
 
-    override fun onAttachedToWindow() {
-        super.onAttachedToWindow()
-        syncSpin()
-    }
-
-    override fun onVisibilityChanged(changedView: View, visibility: Int) {
-        super.onVisibilityChanged(changedView, visibility)
-        if (isAttachedToWindow) syncSpin()      // also called from the View constructor, before `spin` exists
+    /** Turn only while visible on screen (own + ancestors' visibility, window shown, attached). */
+    override fun onVisibilityAggregated(isVisible: Boolean) {
+        super.onVisibilityAggregated(isVisible)
+        if (isVisible) {
+            if (!spin.isStarted) spin.start()
+        } else {
+            spin.cancel()
+        }
     }
 
     override fun onDetachedFromWindow() {
         spin.cancel()
         super.onDetachedFromWindow()
-    }
-
-    /** Turn only while visible on screen. */
-    private fun syncSpin() {
-        if (isShown) {
-            if (!spin.isStarted) spin.start()
-        } else {
-            spin.cancel()
-        }
     }
 
     companion object {

@@ -1,7 +1,9 @@
 package us.jhangy.textify
 
+import android.animation.ArgbEvaluator
 import android.animation.ObjectAnimator
 import android.animation.TimeInterpolator
+import android.animation.ValueAnimator
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -20,6 +22,7 @@ import android.graphics.drawable.LayerDrawable
 import android.graphics.drawable.ShapeDrawable
 import android.graphics.drawable.shapes.RectShape
 import android.os.Bundle
+import android.os.SystemClock
 import android.view.ActionMode
 import android.view.Gravity
 import android.view.Menu
@@ -65,6 +68,9 @@ class SessionActivity : AppCompatActivity() {
     private val chips = ArrayList<StatusChipView>()
     private var states: Array<ParagraphState?> = emptyArray()
     private val cardColors = HashMap<Int, Int>()
+    private var tideAt = LongArray(0)         // uptime at which the current tide reaches box i (shimmer starts then)
+    private var iconTint: ValueAnimator? = null
+    private var iconColor = PLUM
     private var translating = false           // translation mode on (button on or busy)
     private val runs = ArrayList<TranslateRun>()
     private lateinit var panel: TranslationPanel
@@ -122,7 +128,7 @@ class SessionActivity : AppCompatActivity() {
         showClose()                           // X is available from capture start (pressing it during OCR closes)
         b.glow.activate()
         b.scrim.background = scrimDrawable()
-        b.scrim.animate().alpha(1f).setStartDelay(SCRIM_DELAY).setDuration(SCRIM_IN).setInterpolator(EASE_OUT)
+        b.scrim.animate().alpha(1f).setStartDelay(SCRIM_DELAY).setDuration(SCRIM_IN).setInterpolator(Easing.EASE_OUT)
         ocrRunning = true
         Ocr.recognize(this, bmp, Prefs.scripts(this)) { found -> runOnUiThread { onOcr(found) } }
     }
@@ -137,7 +143,7 @@ class SessionActivity : AppCompatActivity() {
         if (closing) return
         b.root.doOnLayout {
             b.scrim.animate().cancel()
-            b.scrim.animate().alpha(0f).setStartDelay(0L).setDuration(SCRIM_OUT).setInterpolator(EASE_IN)
+            b.scrim.animate().alpha(0f).setStartDelay(0L).setDuration(SCRIM_OUT).setInterpolator(Easing.EASE_IN)
             b.glow.settle()
             if (found.isEmpty()) showHint() else showPills(found)
         }
@@ -149,6 +155,7 @@ class SessionActivity : AppCompatActivity() {
         val padY = (PillView.PAD_Y_DP * d).roundToInt()
         blocks = found.sortedWith(compareBy({ it.box.top }, { it.box.left }))
         states = arrayOfNulls(blocks.size)
+        tideAt = LongArray(blocks.size)
         val n = blocks.size
         blocks.forEachIndexed { i, block ->
             val pill = PillView(this, block)
@@ -245,8 +252,8 @@ class SessionActivity : AppCompatActivity() {
         actionMode?.finish()
         panel.close()
         translating = !translating
+        tide(translating)                       // first: sets each box's tide arrival time, which gates its shimmer
         if (translating) startRun()
-        tide(translating)
         refreshButton()
     }
 
@@ -267,7 +274,14 @@ class SessionActivity : AppCompatActivity() {
     private fun applyState(i: Int, reveal: PillView.Reveal, delayMs: Long) {
         val pill = pills[i]
         val s = states[i]
-        pill.shimmering = translating && s == ParagraphState.Translating
+        val shimmer = translating && s == ParagraphState.Translating
+        val wait = tideAt[i] - SystemClock.uptimeMillis()
+        if (shimmer && wait > 0L) {             // prism-tide: shimmer starts when the tide reaches the box
+            pill.shimmering = false
+            pill.postDelayed({ if (translating && states[i] == ParagraphState.Translating) pill.shimmering = true }, wait)
+        } else {
+            pill.shimmering = shimmer
+        }
         chips[i].show(if (translating) chipFor(s) else null, delayMs)
         if (translating && s is ParagraphState.Done) {
             if (!pill.showsTranslation || pill.translationText != s.text) pill.showTranslation(s.text, cardColor(i), reveal, delayMs)
@@ -289,11 +303,12 @@ class SessionActivity : AppCompatActivity() {
         b.tide.visibility = View.VISIBLE
         b.tide.translationY = if (on) -band else h
         b.tide.animate().translationY(if (on) h else -band)
-            .setStartDelay(0L).setDuration(if (on) TIDE else TIDE_BACK).setInterpolator(FAST_OUT_SLOW_IN)
+            .setStartDelay(0L).setDuration(if (on) TIDE else TIDE_BACK).setInterpolator(Easing.FAST_OUT_SLOW_IN)
             .withEndAction { b.tide.visibility = View.INVISIBLE }
         pills.forEachIndexed { i, pill ->
             val cy = (pill.top + pill.height / 2f) / h
             val delay = if (on) (TIDE * cy * 0.85f).roundToLong() else (TIDE_BACK * (1f - cy) * 0.8f).roundToLong()
+            tideAt[i] = SystemClock.uptimeMillis() + if (on) max(0L, delay) else 0L
             applyState(i, PillView.Reveal.TOP_DOWN, max(0L, delay))
         }
     }
@@ -303,7 +318,12 @@ class SessionActivity : AppCompatActivity() {
         val busy = translating && anyTranslating(states.asList())
         val on = translating && !busy
         b.trOn.animate().alpha(if (on) 1f else 0f).setDuration(BTN_STATE)
-        b.trIcon.setColorFilter(if (on) Color.WHITE else PLUM)
+        iconTint?.cancel()                      // same duration / curve as the gradient's alpha fade above
+        iconTint = ValueAnimator.ofObject(ArgbEvaluator(), iconColor, if (on) Color.WHITE else PLUM).apply {
+            duration = BTN_STATE
+            addUpdateListener { iconColor = it.animatedValue as Int; b.trIcon.setColorFilter(iconColor) }
+            start()
+        }
         b.trIcon.animate().alpha(if (busy) 0.55f else 1f).setDuration(BTN_STATE)
         if (busy) b.trRing.visibility = View.VISIBLE
         b.trRing.animate().alpha(if (busy) 1f else 0f).setDuration(BTN_STATE).withEndAction {
@@ -316,9 +336,9 @@ class SessionActivity : AppCompatActivity() {
     private fun showTranslateButton() {
         val delay = 2 * BTN_STAGGER
         b.trBtn.isEnabled = true
-        b.trBtn.fade(1f, XIN, EMPHASIZED, delay)
+        b.trBtn.fade(1f, XIN, Easing.EMPHASIZED, delay)
         b.trBtn.animate().scaleX(1f).scaleY(1f).rotation(0f)
-            .setStartDelay(delay).setDuration(XIN).setInterpolator(X_OVERSHOOT)
+            .setStartDelay(delay).setDuration(XIN).setInterpolator(Easing.OVERSHOOT)
     }
 
     private fun dp(v: Float) = v * resources.displayMetrics.density
@@ -327,15 +347,15 @@ class SessionActivity : AppCompatActivity() {
         listOf(b.close, b.settings).forEachIndexed { i, btn ->
             val delay = i * BTN_STAGGER
             btn.isEnabled = true
-            btn.fade(1f, XIN, EMPHASIZED, delay)
+            btn.fade(1f, XIN, Easing.EMPHASIZED, delay)
             btn.animate().scaleX(1f).scaleY(1f).rotation(0f)
-                .setStartDelay(delay).setDuration(XIN).setInterpolator(X_OVERSHOOT)
+                .setStartDelay(delay).setDuration(XIN).setInterpolator(Easing.OVERSHOOT)
         }
     }
 
     private fun showHint() {
         b.hint.apply { visibility = View.VISIBLE; alpha = 0f; scaleX = 0.92f; scaleY = 0.92f }
-        b.hint.fade(1f, HINT_IN, EMPHASIZED)
+        b.hint.fade(1f, HINT_IN, Easing.EMPHASIZED)
         b.hint.animate().scaleX(1f).scaleY(1f).setDuration(HINT_IN).setInterpolator(HINT_OVERSHOOT)
     }
 
@@ -393,8 +413,8 @@ class SessionActivity : AppCompatActivity() {
         closing = true
         actionMode?.finish()
         b.close.animate().scaleX(0.6f).scaleY(0.6f).rotation(90f)
-            .setDuration(CLOSE_OUT).setInterpolator(X_OVERSHOOT)
-        b.root.animate().alpha(0f).setDuration(CLOSE_OUT).setInterpolator(CLOSE_CURVE)
+            .setDuration(CLOSE_OUT).setInterpolator(Easing.OVERSHOOT)
+        b.root.animate().alpha(0f).setDuration(CLOSE_OUT).setInterpolator(Easing.CLOSE)
             .withEndAction { endSession(); finish() }
     }
 
@@ -404,8 +424,8 @@ class SessionActivity : AppCompatActivity() {
         closing = true
         actionMode?.finish()
         b.settings.animate().rotation(90f).scaleX(1.08f).scaleY(1.08f)
-            .setStartDelay(0L).setDuration(SESSION_OUT).setInterpolator(X_OVERSHOOT)
-        b.root.animate().alpha(0f).setDuration(SESSION_OUT).setInterpolator(CLOSE_CURVE)
+            .setStartDelay(0L).setDuration(SESSION_OUT).setInterpolator(Easing.OVERSHOOT)
+        b.root.animate().alpha(0f).setDuration(SESSION_OUT).setInterpolator(Easing.CLOSE)
             .withEndAction {
                 CaptureService.setSettingsVisible(true)
                 SettingsActivity.start(this)
@@ -466,13 +486,7 @@ class SessionActivity : AppCompatActivity() {
         )
         private val TIDE_STOPS = floatArrayOf(0f, 0.30f, 0.48f, 0.64f, 0.80f, 1f)
 
-        private val EMPHASIZED = PathInterpolator(0.2f, 0f, 0f, 1f)         // a2 cubic-bezier(.2,0,0,1)
-        private val X_OVERSHOOT = PathInterpolator(0.2f, 0f, 0f, 1.3f)      // a2 .xbtn transform
         private val HINT_OVERSHOOT = PathInterpolator(0.2f, 0f, 0f, 1.2f)   // a2 .nohint transform
-        private val EASE_OUT = PathInterpolator(0f, 0f, 0.58f, 1f)          // CSS ease-out (scrimIn)
-        private val EASE_IN = PathInterpolator(0.42f, 0f, 1f, 1f)           // CSS ease-in (scrimOut)
-        private val CLOSE_CURVE = PathInterpolator(0.3f, 0f, 0.8f, 0.15f)   // a2 close() opacity curve
-        private val FAST_OUT_SLOW_IN = PathInterpolator(0.4f, 0f, 0.2f, 1f) // prism-tide tide
 
         private var pending: Bitmap? = null
         private var active: WeakReference<SessionActivity>? = null
