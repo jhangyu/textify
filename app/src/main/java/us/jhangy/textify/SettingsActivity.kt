@@ -225,10 +225,9 @@ class SettingsActivity : AppCompatActivity() {
         main.postDelayed(autoHide, MSG_IN + BLOCK_HOLD)
     }
 
-    /** msgOut 160 ease-in (alpha -> 0, translationY -> -8dp); resting text back. No-op when already hidden. */
+    /** msgOut 160 ease-in (alpha -> 0, translationY -> -8dp); resting text back. Always retargets: a show queued this frame has not moved the alpha yet. */
     private fun hideBlock() {
         main.removeCallbacks(autoHide)
-        if (b.noteBlock.alpha == 0f && b.noteRest.alpha == 1f) return
         b.noteBlock.animate().alpha(0f).translationY(-8 * d).setDuration(MSG_OUT).setInterpolator(EASE_IN)
         b.noteRest.animate().alpha(1f).setDuration(NOTE_FADE)
     }
