@@ -39,12 +39,11 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
-private fun argb(alpha: Float, rgb: Int): Int = ((alpha * 255f).roundToInt() shl 24) or (rgb and 0xFFFFFF)
-
 /**
  * Frozen-screen capture session (a2 "Halo"). Screenshot 1:1 under hidden system bars, edge glow +
  * scrim while OCR runs, then one selectable pill per OCR line. Tap pill = copy line, long-press =
  * system selection, X/back = closeOut fade, then CaptureService brings the bubble back.
+ * Settings button = session fades out and SettingsActivity opens (bubble stays hidden).
  */
 class SessionActivity : AppCompatActivity() {
 
@@ -82,6 +81,7 @@ class SessionActivity : AppCompatActivity() {
         }
 
         b.close.setOnClickListener { close() }
+        b.settings.setOnClickListener { openSettings() }
         b.pills.setOnClickListener { actionMode?.finish() }   // empty space never closes; it only drops a selection
         onBackPressedDispatcher.addCallback(this) {
             val mode = actionMode
@@ -90,6 +90,7 @@ class SessionActivity : AppCompatActivity() {
 
         b.hintOrb.setImageDrawable(orb(dim = true))
         b.close.apply { alpha = 0f; scaleX = 0.6f; scaleY = 0.6f; rotation = -90f; isEnabled = false }
+        b.settings.apply { alpha = 0f; scaleX = 0.6f; scaleY = 0.6f; rotation = -90f; isEnabled = false }
 
         // activation: glow blooms in, faint scrim after scrimDelay, OCR runs
         showClose()                           // X is available from capture start (pressing it during OCR closes)
@@ -97,7 +98,7 @@ class SessionActivity : AppCompatActivity() {
         b.scrim.background = scrimDrawable()
         b.scrim.animate().alpha(1f).setStartDelay(SCRIM_DELAY).setDuration(SCRIM_IN).setInterpolator(EASE_OUT)
         ocrRunning = true
-        Ocr.recognize(this, bmp, Prefs.script(this)) { lines -> runOnUiThread { onOcr(lines) } }
+        Ocr.recognize(this, bmp, Prefs.scripts(this)) { lines -> runOnUiThread { onOcr(lines) } }
     }
 
     private fun onOcr(lines: List<OcrLine>) {
@@ -173,9 +174,13 @@ class SessionActivity : AppCompatActivity() {
     }
 
     private fun showClose() {
-        b.close.isEnabled = true
-        b.close.fade(1f, XIN, EMPHASIZED)
-        b.close.animate().scaleX(1f).scaleY(1f).rotation(0f).setDuration(XIN).setInterpolator(X_OVERSHOOT)
+        listOf(b.close, b.settings).forEachIndexed { i, btn ->
+            val delay = i * BTN_STAGGER
+            btn.isEnabled = true
+            btn.fade(1f, XIN, EMPHASIZED, delay)
+            btn.animate().scaleX(1f).scaleY(1f).rotation(0f)
+                .setStartDelay(delay).setDuration(XIN).setInterpolator(X_OVERSHOOT)
+        }
     }
 
     private fun showHint() {
@@ -190,7 +195,7 @@ class SessionActivity : AppCompatActivity() {
             override fun resize(width: Int, height: Int): Shader {
                 val w = max(1, width).toFloat()
                 val h = max(1, height).toFloat()
-                return RadialGradient(w / 2f, h / 2f, 1.2f * w, argb(0.05f, INK), argb(0.16f, INK), Shader.TileMode.CLAMP).apply {
+                return RadialGradient(w / 2f, h / 2f, 1.2f * w, withAlpha(0.05f, INK), withAlpha(0.16f, INK), Shader.TileMode.CLAMP).apply {
                     setLocalMatrix(Matrix().apply { setScale(1f, (0.8f * h) / (1.2f * w), w / 2f, h / 2f) })
                 }
             }
@@ -218,8 +223,9 @@ class SessionActivity : AppCompatActivity() {
         }
     }
 
-    private fun View.fade(to: Float, ms: Long, curve: TimeInterpolator) {
+    private fun View.fade(to: Float, ms: Long, curve: TimeInterpolator, delay: Long = 0L) {
         ObjectAnimator.ofFloat(this, View.ALPHA, to).apply {
+            startDelay = delay
             duration = ms
             interpolator = curve
             setAutoCancel(true)               // a newer fade of the same view replaces the running one
@@ -240,6 +246,22 @@ class SessionActivity : AppCompatActivity() {
             .setDuration(CLOSE_OUT).setInterpolator(X_OVERSHOOT)
         b.root.animate().alpha(0f).setDuration(CLOSE_OUT).setInterpolator(CLOSE_CURVE)
             .withEndAction { endSession(); finish() }
+    }
+
+    /** §4: session fades out, then settings opens with the bubble hidden. Allowed during and after OCR. */
+    private fun openSettings() {
+        if (closing) return
+        closing = true
+        actionMode?.finish()
+        b.settings.animate().rotation(90f).scaleX(1.08f).scaleY(1.08f)
+            .setStartDelay(0L).setDuration(SESSION_OUT).setInterpolator(X_OVERSHOOT)
+        b.root.animate().alpha(0f).setDuration(SESSION_OUT).setInterpolator(CLOSE_CURVE)
+            .withEndAction {
+                CaptureService.setSettingsVisible(true)
+                SettingsActivity.start(this)
+                endSession()
+                finish()
+            }
     }
 
     /** Exactly one session-ended callback to the service per activity instance. */
@@ -270,6 +292,8 @@ class SessionActivity : AppCompatActivity() {
         private const val XIN = 240L
         private const val HINT_IN = 300L
         private const val CLOSE_OUT = 300L
+        private const val SESSION_OUT = 300L
+        private const val BTN_STAGGER = 40L
         private const val BOX_STAGGER = 140f
 
         private const val INK = 0x1E1B4B

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Capture session layers, bottom to top (spec §Architecture):
-     screenshot, scrim, pill container, edge glow, X, hint. -->
+     screenshot, scrim, pill container, edge glow, X, settings, hint. -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/root"
     android:layout_width="match_parent"
@@ -53,6 +53,27 @@
             android:layout_gravity="center"
             android:importantForAccessibility="no"
             android:src="@drawable/ic_session_close" />
+    </FrameLayout>
+
+    <FrameLayout
+        android:id="@+id/settings"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="44dp"
+        android:layout_marginEnd="68dp"
+        android:background="@drawable/session_x_bg"
+        android:clickable="true"
+        android:contentDescription="@string/session_settings"
+        android:elevation="4dp"
+        android:focusable="true">
+
+        <ImageView
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:layout_gravity="center"
+            android:importantForAccessibility="no"
+            android:src="@drawable/ic_session_settings" />
     </FrameLayout>
 
     <LinearLayout
