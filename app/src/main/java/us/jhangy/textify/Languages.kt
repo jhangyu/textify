@@ -6,7 +6,7 @@ import java.util.Locale
 object Languages {
     private val TW: Locale = Locale.forLanguageTag("zh-TW")
 
-    /** zh-TW name of an ML Kit code, e.g. "en" -> 英文, "ja" -> 日文, "zh" -> 中文. */
+    /** zh-TW name of a language code, e.g. "en" -> 英文, "ja" -> 日文, "zh" -> 中文. */
     fun zhName(code: String): String = Locale.forLanguageTag(code).getDisplayLanguage(TW).ifEmpty { code }
 
     /** Name in the language itself, first letter title-cased, e.g. "fr" -> Français, "ja" -> 日本語. */
@@ -28,11 +28,6 @@ object Languages {
         TargetLang.ZH_HANS -> "簡體中文"
         else -> zhName(key)
     }
-
-    /** Model row title: one Chinese model serves both Chinese targets. */
-    fun modelTitle(code: String): String = if (code == "zh") "中文" else nativeName(code)
-
-    fun modelSub(code: String): String = if (code == "zh") "繁體、簡體共用" else zhName(code)
 
     private val GLYPHS = mapOf(
         "zh" to "中", "en" to "A", "ja" to "あ", "ko" to "한", "th" to "ก", "ru" to "Ру", "ar" to "ع", "hi" to "हि",

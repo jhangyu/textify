@@ -73,9 +73,8 @@ dependencies {
     // 1.14.0 = Maven Central latest (2025-09-05); pulls heaven 0.13.0 + nlp-common 0.0.5 (~2.9 MB), jieba stays optional.
     implementation("com.github.houbb:opencc4j:1.14.0")
 
-    // On-device translation (translation spec §2): ML Kit translate (models downloaded on demand through
-    // RemoteModelManager) + bundled language identification. Google Maven latest, verified 2026-10-11.
-    implementation("com.google.mlkit:translate:17.0.3")
+    // Translation routing (translation spec §2): bundled language identification (translation itself is the on-device LLM).
+    // Google Maven latest, verified 2026-10-11.
     implementation("com.google.mlkit:language-id:17.0.6")
 
     // Hy-MT2-1.8B on-device LLM translation (GPU). Google Maven latest 0.18.0, verified 2026-10-11; needs Kotlin >= 2.3.

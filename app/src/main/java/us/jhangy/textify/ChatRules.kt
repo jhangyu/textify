@@ -11,7 +11,7 @@ internal object ChatRules {
     private fun targetName(target: TargetLang): String? = when (target.key) {
         TargetLang.ZH_HANT -> "Traditional Chinese"
         TargetLang.ZH_HANS -> "Simplified Chinese"
-        else -> Locale(target.mlkit).getDisplayLanguage(Locale.ENGLISH).takeIf { it.isNotEmpty() && it != target.mlkit }
+        else -> Locale(target.code).getDisplayLanguage(Locale.ENGLISH).takeIf { it.isNotEmpty() && it != target.code }
     }
 
     /** Single user turn; thinking is switched off at the template level (extraContext enable_thinking=false), not here. */

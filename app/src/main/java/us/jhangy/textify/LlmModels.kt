@@ -29,7 +29,7 @@ class ModelSpec(
     val size: Long get() = pinned.size
 }
 
-/** General chat models: no thinking. Every ML Kit language is offered; an unnamed target gets a null prompt -> ML Kit. */
+/** General chat models: no thinking. Every language is offered; an unnamed target gets a null prompt -> Failed. */
 private val CHAT_CONTEXT: Map<String, Any> = mapOf("enable_thinking" to false)
 
 /** Every selectable translation LLM, in Settings row order; the first is the default active model. */

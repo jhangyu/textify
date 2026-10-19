@@ -5,7 +5,7 @@ package us.jhangy.textify
  * JVM test runner; the Hy-MT2 spec in LlmModels.kt hands them to the engine (Llm.kt).
  */
 internal object HyMtRules {
-    /** ML Kit code -> English language name of the Hy-MT2 language table (model card "Supported Languages"). */
+    /** Language code -> English language name of the Hy-MT2 language table (model card "Supported Languages"). */
     private val names = mapOf(
         "zh" to "Chinese", "en" to "English", "fr" to "French", "pt" to "Portuguese", "es" to "Spanish",
         "ja" to "Japanese", "tr" to "Turkish", "ru" to "Russian", "ar" to "Arabic", "ko" to "Korean",
@@ -17,13 +17,13 @@ internal object HyMtRules {
         "ug" to "Uyghur",
     )
 
-    fun supports(mlkitCode: String): Boolean = mlkitCode in names
+    fun supports(code: String): Boolean = code in names
 
     /** Target name for the prompt; both Chinese targets name their script (the model card lists "Traditional Chinese" explicitly). */
     fun targetName(target: TargetLang): String? = when (target.key) {
         TargetLang.ZH_HANT -> "Traditional Chinese"
         TargetLang.ZH_HANS -> "Simplified Chinese"   // ponytail: the card names plain "Chinese"; stating the script keeps Hans output from drifting to Hant
-        else -> names[target.mlkit]
+        else -> names[target.code]
     }
 
     /** Official default-translation prompt (English variant, no system prompt). Null = target not in the Hy-MT2 set. */

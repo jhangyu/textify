@@ -32,9 +32,6 @@ object Llm {
     fun waitingWifi(m: ModelSpec): Boolean = Downloads.waitingWifi(m.files)
     fun progress(m: ModelSpec): Float = Downloads.progress(m.files)
 
-    /** Keys of the models whose GPU engine failed to start in this process. */
-    val gpuFailed: Set<String> get() = gpuFailedKeys.toSet()
-
     /** Keys of the fully downloaded models. */
     fun downloaded(ctx: Context): Set<String> = MODELS.filter { isDownloaded(ctx, it) }.mapTo(HashSet()) { it.key }
 
@@ -59,7 +56,7 @@ object Llm {
     }
 
     /**
-     * Translates one paragraph ([source] = ML Kit code, already flattened text) into [target] with [m], serially.
+     * Translates one paragraph ([source] = language code, already flattened text) into [target] with [m], serially.
      * [onResult] gets null on any failure. Output is NOT OpenCC-converted.
      */
     fun translate(ctx: Context, m: ModelSpec, text: String, source: String, target: TargetLang, onResult: (String?) -> Unit) {
