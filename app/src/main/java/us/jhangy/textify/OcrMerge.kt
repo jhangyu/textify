@@ -154,8 +154,9 @@ internal fun mangaCrops(paragraphs: List<OcrCandidate>, width: Int, height: Int)
  * Applies the re-reads: [read] = manga-ocr text of a crop, null = failed (paragraph and its neighbours keep ML Kit's
  * text). A re-read paragraph becomes one line over the union box, vertical when taller than wide, without characters
  * (so a double tap does not flip it); absorbed paragraphs disappear. Result sorted top, then left, like [mergeOcr].
+ * Anything thrown (e.g. OOM while cropping) = [paragraphs] unchanged, so the caller always gets a result.
  */
-internal fun applyMangaReads(paragraphs: List<OcrCandidate>, crops: List<MangaCrop>, read: (Box) -> String?): List<OcrCandidate> {
+internal fun applyMangaReads(paragraphs: List<OcrCandidate>, crops: List<MangaCrop>, read: (Box) -> String?): List<OcrCandidate> = try {
     val out = paragraphs.toMutableList<OcrCandidate?>()
     for (c in crops) {
         val text = read(c.crop) ?: continue
@@ -164,7 +165,9 @@ internal fun applyMangaReads(paragraphs: List<OcrCandidate>, crops: List<MangaCr
         )
         c.absorbed.forEach { out[it] = null }
     }
-    return out.filterNotNull().sortedWith(compareBy({ it.box.top }, { it.box.left }))
+    out.filterNotNull().sortedWith(compareBy({ it.box.top }, { it.box.left }))
+} catch (t: Throwable) {
+    paragraphs
 }
 
 /** Paragraph confidence = mean of its lines' Text.Line.getConfidence() (blocks have none); 0 without lines. */

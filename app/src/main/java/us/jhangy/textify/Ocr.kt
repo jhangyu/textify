@@ -51,7 +51,7 @@ object Ocr {
                 val merged = mergeOcr(parts.flatMap { it.orEmpty() })
                 val crops = if (manga == null) emptyList() else mangaCrops(merged, bitmap.width, bitmap.height)
                 val posted = crops.isNotEmpty() && manga!!.post {
-                    val read = applyMangaReads(merged, crops) { manga.read(bitmap, it) }
+                    val read = applyMangaReads(merged, crops) { manga.read(bitmap, it) }   // never throws: onResult always fires
                     main.post { onResult(blocks(read)) }
                 }
                 if (!posted) onResult(blocks(merged))

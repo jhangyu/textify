@@ -60,6 +60,29 @@ class MangaOcrTest {
     }
 
     @Test
+    fun readAfterCloseRunsNoInference() {
+        val dir = File(System.getProperty("user.home"), ".cache/textify-models/manga/big")
+        val files = listOf("encoder_model_int8.onnx", "decoder_model_int8.onnx", "vocab.txt").map { File(dir, it) }
+        files.forEach { assertTrue("model file missing: $it", it.isFile) }
+        val img = Class.forName("javax.imageio.ImageIO").getMethod("read", File::class.java)
+            .invoke(null, File(root, "scripts/tmp/2086027158510792874.jpg"))
+        val crop = Box(1137, 248, 1239, 485)                            // も〜！ (a read here would return text)
+        val px = img.javaClass.getMethod("getRGB", Int::class.java, Int::class.java, Int::class.java, Int::class.java,
+            IntArray::class.java, Int::class.java, Int::class.java)
+            .invoke(img, crop.left, crop.top, crop.width, crop.height, null, 0, crop.width) as IntArray
+        val ocr = MangaOcr(files[0], files[1], files[2])
+        ocr.close()
+        assertNull(ocr.read(px, crop.width, crop.height))
+    }
+
+    @Test
+    fun throwingReadKeepsMlKitResult() {
+        val page = realPage()
+        val crops = mangaCrops(page, 1240, 2000)
+        assertEquals(page, applyMangaReads(page, crops) { throw OutOfMemoryError("crop") })
+    }
+
+    @Test
     fun triggerOnRealPageBubblesNotOnLongHorizontalOrChinese() {
         val page = realPage()
         for (start in listOf("こいパ", "もう", "よと", "話が")) {
@@ -96,6 +119,9 @@ class MangaOcrTest {
         var n = 0
         assertNull(greedyDecode { loop[n++ % loop.size] })              // never EOS, cycles 6 tokens
         assertNull(greedyDecode { 42 })                                // one token forever
+        val aborted = listOf(20, -1, 3)                                // -1 = engine closed mid-decode
+        n = 0
+        assertNull(greedyDecode { aborted[n++] })
         val text = listOf(20, 21, 22, 3)
         n = 0
         assertEquals(listOf(20, 21, 22), greedyDecode { text[n++] })

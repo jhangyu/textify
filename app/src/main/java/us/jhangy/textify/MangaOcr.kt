@@ -25,6 +25,7 @@ class MangaOcr(private val encoder: File, private val decoder: File, private val
     private var sessions: Pair<OrtSession, OrtSession>? = null
     private var words: List<String> = emptyList()
     private var broken = false                // opening failed once: every later read fails fast
+    @Volatile private var closed = false      // set by close(): queued and running reads stop without inference
 
     /** Runs [task] on the inference thread; false once [close]d. */
     fun post(task: () -> Unit): Boolean = try {
@@ -34,8 +35,9 @@ class MangaOcr(private val encoder: File, private val decoder: File, private val
         false
     }
 
-    /** Closes the sessions after any queued read, then stops the thread. */
+    /** Stops any running read and the queued ones (they return null), closes the sessions, stops the thread. */
     fun close() {
+        closed = true
         post { sessions?.let { it.first.close(); it.second.close() }; sessions = null }
         thread.shutdown()
     }
@@ -44,7 +46,7 @@ class MangaOcr(private val encoder: File, private val decoder: File, private val
      * Text of one crop ([argb] row-major, [w]×[h]); null = model missing or broken, or an empty / looping /
      * unfinished read. Inference thread only (tests: any single thread).
      */
-    fun read(argb: IntArray, w: Int, h: Int): String? = try {
+    fun read(argb: IntArray, w: Int, h: Int): String? = if (closed) null else try {
         val (enc, dec) = open()
         val env = OrtEnvironment.getEnvironment()
         val x = OnnxTensor.createTensor(env, FloatBuffer.wrap(mangaPixels(argb, w, h)), longArrayOf(1, 3, SIZE.toLong(), SIZE.toLong()))
@@ -52,6 +54,7 @@ class MangaOcr(private val encoder: File, private val decoder: File, private val
             enc.run(mapOf("pixel_values" to x)).use { e ->
                 val hidden = e.get(0) as OnnxTensor
                 greedyDecode { ids ->
+                    if (closed) return@greedyDecode -1
                     OnnxTensor.createTensor(env, LongBuffer.wrap(ids), longArrayOf(1, ids.size.toLong())).use { t ->
                         dec.run(mapOf("input_ids" to t, "encoder_hidden_states" to hidden)).use { r ->
                             val logits = (r.get(0) as OnnxTensor).floatBuffer   // [1, ids, vocab]
@@ -74,7 +77,7 @@ class MangaOcr(private val encoder: File, private val decoder: File, private val
         val env = OrtEnvironment.getEnvironment()
         val enc = env.createSession(encoder.path)
         val dec = try { env.createSession(decoder.path) } catch (e: Exception) { enc.close(); throw e }
-        words = vocab.readLines()
+        words = try { vocab.readLines() } catch (e: Exception) { enc.close(); dec.close(); throw e }
         broken = false
         return (enc to dec).also { sessions = it }
     }
@@ -98,8 +101,8 @@ private fun argmax(b: FloatBuffer, from: Int, n: Int): Int {
 }
 
 /**
- * Greedy decode: [next] = the most likely token after the ids so far (start token first). Returns the tokens before
- * EOS, or null when they loop ([looping]) or hit [MAX_TOKENS] without EOS.
+ * Greedy decode: [next] = the most likely token after the ids so far (start token first), negative = abort. Returns
+ * the tokens before EOS, or null when aborted, looping ([looping]) or at [MAX_TOKENS] without EOS.
  */
 internal fun greedyDecode(next: (LongArray) -> Int): List<Int>? {
     val ids = arrayListOf(START)
@@ -107,6 +110,7 @@ internal fun greedyDecode(next: (LongArray) -> Int): List<Int>? {
     while (ids.size < MAX_TOKENS) {
         val n = next(ids.toLongArray())
         if (n == EOS) return out
+        if (n < 0) return null
         ids += n.toLong()
         out += n
         if (looping(out)) return null
