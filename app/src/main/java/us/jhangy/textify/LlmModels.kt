@@ -9,8 +9,7 @@ package us.jhangy.textify
 data class Sampler(val topK: Int, val topP: Double, val temperature: Double)
 
 /**
- * One downloadable `.litertlm` model. [revision] + exact [size] pin the file: a resumed download can never mix two
- * versions (any other size is rejected). [key] is what Prefs stores; [title]/[badge]/[glyph] are the Settings row.
+ * One downloadable `.litertlm` model ([pinned]: revision + exact size, see [PinnedFile]). [key] is what Prefs stores; [title]/[badge]/[glyph] are the Settings row.
  * [context] = chat-template variables passed with every message (e.g. enable_thinking=false).
  * [fp32Activations] = run the GPU with fp32 activations (the runtime default is fp16, which garbles some models).
  */
@@ -19,17 +18,15 @@ class ModelSpec(
     val title: String,
     val badge: String,
     val glyph: String,
-    val repo: String,
-    val file: String,
-    val revision: String,
-    val size: Long,
+    val pinned: PinnedFile,
     val sampler: Sampler,
     val context: Map<String, Any>,
     val prompt: (String, TargetLang) -> String?,
     val clean: (String) -> String?,
     val supports: (String) -> Boolean,
 ) {
-    val url: String get() = "https://huggingface.co/$repo/resolve/$revision/$file"
+    val files: List<PinnedFile> get() = listOf(pinned)
+    val size: Long get() = pinned.size
 }
 
 /** General chat models: no thinking. Every ML Kit language is offered; an unnamed target gets a null prompt -> ML Kit. */
@@ -39,8 +36,7 @@ private val CHAT_CONTEXT: Map<String, Any> = mapOf("enable_thinking" to false)
 val MODELS: List<ModelSpec> = listOf(
     ModelSpec(
         key = "hymt", title = "Hy-MT2", badge = "1.8B", glyph = "Hy",
-        repo = "litert-community/Hy-MT2-1.8B", file = "Hy-MT2-1.8B_int8.litertlm",
-        revision = "1ac9676f3d10c7f64835eb83026e6df2ec343d1f", size = 1_827_026_224L,
+        pinned = PinnedFile("litert-community/Hy-MT2-1.8B", "Hy-MT2-1.8B_int8.litertlm", "1ac9676f3d10c7f64835eb83026e6df2ec343d1f", 1_827_026_224L),
         sampler = Sampler(topK = 20, topP = 0.6, temperature = 0.7),   // Hy-MT2 model card
         context = emptyMap(),
         prompt = HyMtRules::prompt, clean = HyMtRules::clean, supports = HyMtRules::supports,
@@ -48,8 +44,7 @@ val MODELS: List<ModelSpec> = listOf(
     // Generic file, the one the model README benchmarks on GPU (docs/logs/2026-10-11/gemma-pin.md).
     ModelSpec(
         key = "gemma", title = "Gemma 4", badge = "E2B", glyph = "G",
-        repo = "litert-community/gemma-4-E2B-it-litert-lm", file = "gemma-4-E2B-it.litertlm",
-        revision = "b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1", size = 2_588_147_712L,
+        pinned = PinnedFile("litert-community/gemma-4-E2B-it-litert-lm", "gemma-4-E2B-it.litertlm", "b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1", 2_588_147_712L),
         sampler = Sampler(topK = 10, topP = 0.95, temperature = 0.3),  // ponytail: README gives none; low temperature for translation
         context = CHAT_CONTEXT,
         prompt = ChatRules::prompt, clean = ChatRules::clean, supports = { true },

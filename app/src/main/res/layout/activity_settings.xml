@@ -310,6 +310,11 @@
                         </LinearLayout>
                     </FrameLayout>
 
+                    <!-- manga-ocr model row (filled in code, same look as the LLM rows) -->
+                    <FrameLayout android:id="@+id/ocrModelHost"
+                        android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:paddingStart="4dp" android:paddingEnd="4dp" />
+
                     <!-- .tl padding 14/14/12, corner 20 -->
                     <LinearLayout
                         android:id="@+id/timeline"

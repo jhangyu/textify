@@ -36,6 +36,11 @@ one is kept (`OcrMerge.kt`). OCR runs fully offline; translation runs offline af
 `// ponytail:` ML Kit picks its own compute backend (CPU/GPU via NNAPI); it
 exposes no NPU/int4 control. Upgrade path if speed matters: swap in a
 LiteRT int4 model with a hardware delegate.
+Japanese paragraphs that look like manga bubbles (kana, vertical or short lines) are re-read from a crop by
+manga-ocr (manga-ocr-base int8 ONNX, ~117 MB, apache-2.0, run with onnxruntime-android) so multi-column vertical
+text keeps its reading order; without the model, or on failure, ML Kit's text stays. The 3 model files
+(encoder, decoder, vocab; pinned HF revisions) download on first use and are listed in Settings under the OCR
+languages; one generic pinned-file downloader (`Downloads.kt`) serves them and the LLMs.
 
 ## Translation
 The translate button next to the settings button (shown once OCR found text) replaces every
@@ -64,6 +69,6 @@ python3 scripts/build_release.py   # signed release APK
 `local.properties` must point `sdk.dir` at your Android SDK.
 
 ## Stack
-AGP 8.13.2, Gradle 8.14.6, Kotlin 2.3.21, LiteRT-LM litertlm-android 0.18.0 (Hy-MT2, Gemma 4 E2B; needs Kotlin >= 2.3), ML Kit text-recognition 16.0.1, ML Kit translate 17.0.3, language-id 17.0.6, opencc4j 1.14.0.
+AGP 8.13.2, Gradle 8.14.6, Kotlin 2.3.21, LiteRT-LM litertlm-android 0.18.0 (Hy-MT2, Gemma 4 E2B; needs Kotlin >= 2.3), ML Kit text-recognition 16.0.1, ML Kit translate 17.0.3, language-id 17.0.6, opencc4j 1.14.0, onnxruntime-android (manga-ocr; version in `app/build.gradle.kts`).
 AGP 9.x + latest androidx were tried but 9.x's built-in Kotlin plugin conflicts
 with the standard kotlin-android plugin; pinned to the proven 8.13 line.

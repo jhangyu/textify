@@ -117,7 +117,7 @@ class TranslateRulesTest {
     }
 
     private fun spec(key: String, supports: (String) -> Boolean = { true }) = ModelSpec(
-        key, key, "", "", "repo", "f.litertlm", "rev", 1L, Sampler(1, 1.0, 1.0), emptyMap(), { _, _ -> "" }, { it }, supports,
+        key, key, "", "", PinnedFile("repo", "f.litertlm", "rev", 1L), Sampler(1, 1.0, 1.0), emptyMap(), { _, _ -> "" }, { it }, supports,
     )
 
     private val a = spec("a")

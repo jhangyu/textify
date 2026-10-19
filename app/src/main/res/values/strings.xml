@@ -79,6 +79,9 @@
     <string name="tr_models_hint">每次開啟設定時向系統查詢</string>
     <string name="tr_predownload">預先下載語言</string>
     <string name="tr_note">點選一個大型模型作為主要翻譯（首次翻譯時自動下載，約 2 GB）；其餘語言模型（每個約 30MB）為備援，下載後可離線翻譯</string>
+    <string name="ocr_model_title">漫畫直排日文 OCR</string>
+    <string name="ocr_model_badge">manga-ocr</string>
+    <string name="ocr_model_size">約 %1$d MB</string>
     <string name="llm_size">約 %1$s GB</string>
     <string name="llm_downloading">下載中 %1$d%%</string>
     <string name="llm_done">已下載</string>

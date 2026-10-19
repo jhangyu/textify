@@ -97,13 +97,77 @@ internal fun regroup(chars: List<OcrChar>, vertical: Boolean): Pair<String, List
  */
 internal fun flipNeighbours(i: Int, boxes: List<Box>, texts: List<String>, chars: List<OcrChar>): List<Int> {
     if (chars.isEmpty()) return emptyList()
-    val size = chars.map { max(it.box.width, it.box.height) }.sorted()[chars.size / 2]
+    val size = charSize(chars)
     val a = boxes[i]
     return boxes.indices.filter { j ->
         val b = boxes[j]
         j != i && mostlyCjk(texts[j]) &&
             max(a.left - b.right, b.left - a.right) <= size && max(a.top - b.bottom, b.top - a.bottom) <= size
     }
+}
+
+/** Median character size (longer side of each character box); [chars] must not be empty. */
+private fun charSize(chars: List<OcrChar>): Int = chars.map { max(it.box.width, it.box.height) }.sorted()[chars.size / 2]
+
+private const val SHORT_LINE = 12   // ponytail: longest line (chars) still re-read when horizontal; a wider crop squashed to 224×224 reads badly. Tune on real pages.
+
+/**
+ * manga-ocr re-read trigger (manga-ocr contract decision 1): [text] has kana and is [vertical] or its longest line
+ * has ≤ [SHORT_LINE] characters. Long horizontal Japanese (app UI, prose) and kana-less text stay ML Kit only.
+ */
+internal fun mangaTrigger(text: String, vertical: Boolean): Boolean =
+    text.any { it in '\u3040'..'\u30FF' } &&
+        (vertical || text.split('\n').maxOf { l -> l.count { !it.isWhitespace() } } <= SHORT_LINE)
+
+/** One manga-ocr re-read: paragraph [index] plus the [absorbed] ones; [box] = their union, [crop] = it padded. */
+internal data class MangaCrop(val index: Int, val absorbed: List<Int>, val box: Box, val crop: Box)
+
+private const val CROP_PAD = 0.5f   // crop padding, in median character sizes (desktop bench: 0 broke a read, 0.5 = 1.0)
+
+/**
+ * Crops to re-read in a [width]×[height] screenshot: each [mangaTrigger] paragraph (in list order, not yet absorbed)
+ * joined with its [flipNeighbours] that also trigger, padded by [CROP_PAD] median character sizes, clamped to the image.
+ * Without characters the size is the box's short side per line.
+ */
+internal fun mangaCrops(paragraphs: List<OcrCandidate>, width: Int, height: Int): List<MangaCrop> {
+    val boxes = paragraphs.map { it.box }
+    val texts = paragraphs.map { it.text }
+    val used = BooleanArray(paragraphs.size)
+    val out = ArrayList<MangaCrop>()
+    paragraphs.forEachIndexed { i, p ->
+        if (used[i] || !mangaTrigger(p.text, p.vertical)) return@forEachIndexed
+        val absorbed = flipNeighbours(i, boxes, texts, p.chars).filter { !used[it] && mangaTrigger(texts[it], paragraphs[it].vertical) }
+        used[i] = true
+        absorbed.forEach { used[it] = true }
+        val box = (absorbed.map { boxes[it] }).fold(p.box) { a, b ->
+            Box(min(a.left, b.left), min(a.top, b.top), max(a.right, b.right), max(a.bottom, b.bottom))
+        }
+        val size = if (p.chars.isNotEmpty()) charSize(p.chars) else min(p.box.width, p.box.height) / max(1, p.lines.size)
+        val pad = Math.round(CROP_PAD * size)
+        val crop = Box(max(0, box.left - pad), max(0, box.top - pad), min(width, box.right + pad), min(height, box.bottom + pad))
+        out += MangaCrop(i, absorbed, box, crop)
+    }
+    return out
+}
+
+/**
+ * Applies the re-reads: [read] = manga-ocr text of a crop, null = failed (paragraph and its neighbours keep ML Kit's
+ * text). A re-read paragraph becomes one line over the union box, vertical when taller than wide, without characters
+ * (so a double tap does not flip it); absorbed paragraphs disappear. Result sorted top, then left, like [mergeOcr].
+ * Anything thrown (e.g. OOM while cropping) = [paragraphs] unchanged, so the caller always gets a result.
+ */
+internal fun applyMangaReads(paragraphs: List<OcrCandidate>, crops: List<MangaCrop>, read: (Box) -> String?): List<OcrCandidate> = try {
+    val out = paragraphs.toMutableList<OcrCandidate?>()
+    for (c in crops) {
+        val text = read(c.crop) ?: continue
+        out[c.index] = paragraphs[c.index].copy(
+            text = text, box = c.box, lines = listOf(c.box), vertical = c.box.height > c.box.width, chars = emptyList(),
+        )
+        c.absorbed.forEach { out[it] = null }
+    }
+    out.filterNotNull().sortedWith(compareBy({ it.box.top }, { it.box.left }))
+} catch (t: Throwable) {
+    paragraphs
 }
 
 /** Paragraph confidence = mean of its lines' Text.Line.getConfidence() (blocks have none); 0 without lines. */

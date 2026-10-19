@@ -12,10 +12,10 @@ class LlmModelsTest {
     @Test
     fun allSpecsUseRevisionUrlAndExactSize() {
         for (m in MODELS) {
-            assertTrue(m.key, sha.matches(m.revision))
+            assertTrue(m.key, sha.matches(m.pinned.revision))
             assertTrue(m.key, m.size > 0)
-            assertEquals(m.key, "https://huggingface.co/${m.repo}/resolve/${m.revision}/${m.file}", m.url)
-            assertFalse(m.key, "/resolve/main/" in m.url)
+            assertEquals(m.key, "https://huggingface.co/${m.pinned.repo}/resolve/${m.pinned.revision}/${m.pinned.file}", m.pinned.url)
+            assertFalse(m.key, "/resolve/main/" in m.pinned.url)
         }
     }
 
