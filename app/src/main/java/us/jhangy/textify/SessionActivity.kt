@@ -318,7 +318,7 @@ class SessionActivity : AppCompatActivity() {
         refreshButton()
     }
 
-    /** Spec §2/§5: never-run, WaitingWifi and Failed paragraphs are (re)translated; others keep their result. */
+    /** Spec §2/§5: never-run, Downloading, WaitingWifi and Failed paragraphs are (re)translated; others keep their result. */
     private fun startRun() {
         val todo = blocks.indices.filter { needsRun(states[it]) && blocks[it].text.isNotEmpty() }.associateWith { blocks[it].text }
         if (todo.isNotEmpty()) translate(todo)

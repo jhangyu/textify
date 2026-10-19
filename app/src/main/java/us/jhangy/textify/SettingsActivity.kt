@@ -95,18 +95,16 @@ class SettingsActivity : AppCompatActivity() {
         if (returning) b.demo.flash()               // §7.3 return flash
         b.demo.resume()                             // no-op while denied
         main.postDelayed(recheck, RECHECK)
-        Translate.onModelsChanged = { refreshModels() }   // a session download may finish while Settings is open
         Llm.onChanged = { onLlmChanged() }
         Downloads.onChanged = { onLlmChanged() }
         renderOcr()
-        refreshModels()                                    // spec §4: query ML Kit every time Settings opens
+        renderLlms()
         b.trPreview.resume()
     }
 
     override fun onPause() {
         main.removeCallbacks(recheck)
         b.demo.pause()
-        Translate.onModelsChanged = null
         Llm.onChanged = null
         Downloads.onChanged = null
         b.trPreview.pause()
@@ -257,11 +255,10 @@ class SettingsActivity : AppCompatActivity() {
 
     // ---- translation card (translation spec §4, prism-tide #trCard) ----
 
-    private enum class SheetMode { NONE, TARGET, DOWNLOAD }
+    private enum class SheetMode { NONE, TARGET }
 
     private var sheetMode = SheetMode.NONE
     private var wifiOnly = true
-    private var lastRows: Map<String, ModelState> = emptyMap()
 
     private fun setupTranslateCard() {
         val rowBg = { pressed(round(withAlpha(0.12f, 0x7C3AED), 24 * d), round(withAlpha(0.06f, 0x7C3AED), 24 * d)) }
@@ -269,7 +266,6 @@ class SettingsActivity : AppCompatActivity() {
         b.wifiRow.background = rowBg()
         b.modelWell.background = round(withAlpha(0.90f, 0xFAF5FF), 22 * d)
         b.modelWell.layoutTransition = LayoutTransition().apply { setDuration(ROW_ANIM) }   // rowIn / rowOut 260
-        b.dlBtn.background = pressed(round(withAlpha(0.14f, 0x7C3AED), -1f), round(withAlpha(0.08f, 0x7C3AED), -1f))
         b.wifiTrackOff.background = round(withAlpha(0.12f, 0x1E1B4B), -1f)
         b.wifiTrackOn.background = CssGradientDrawable(intArrayOf(0xFFA78BFA.toInt(), 0xFFF472B6.toInt()), null, 90f, -1f)
         b.wifiThumb.background = GlowDrawable(oval(Color.WHITE), withAlpha(0.25f, 0x1E1B4B), 3 * d, 1 * d, 0f, -1f)
@@ -292,13 +288,11 @@ class SettingsActivity : AppCompatActivity() {
             Prefs.setWifiOnly(this, wifiOnly)                 // saved at once
             showWifi(animate = true)
             if (!wifiOnly) {                                  // Wi-Fi-only off: retry what waited for Wi-Fi
-                Translate.waitingWifi.forEach { Translate.download(this, it) }
                 MODELS.forEach { if (Llm.waitingWifi(it)) Llm.download(this, it) }
                 if (Downloads.waitingWifi(MANGA_OCR.all)) Downloads.download(this, MANGA_OCR.all)
-                refreshModels()
+                renderLlms()
             }
         }
-        b.dlBtn.setOnClickListener { openSheet(SheetMode.DOWNLOAD) }
         b.sheetScrim.setOnClickListener { closeSheet() }
     }
 
@@ -321,44 +315,9 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
-    private var modelRequest = 0   // latest refreshModels call; older (out-of-order) results are ignored
-
-    /** Spec §4: the downloaded set comes from ML Kit every time; downloading / waiting come from Translate. */
-    private fun refreshModels() {
-        val request = ++modelRequest
-        Translate.downloaded { done ->
-            if (!isDestroyed && request == modelRequest) renderModels(modelRows(done, Translate.downloading, Translate.waitingWifi))
-        }
-    }
-
-    /** Diffs [rows] into the well: removed / added rows animate (LayoutTransition), changed rows swap in place. */
-    private fun renderModels(rows: List<Pair<String, ModelState>>) {
-        val next = rows.toMap()
-        val well = b.modelWell
-        for (i in well.childCount - 1 downTo 0) if (well.getChildAt(i).tag.let { it !is LlmTag && it !in next }) well.removeViewAt(i)
-        renderLlms()
-        rows.forEachIndexed { rowIndex, (code, state) ->
-            val index = rowIndex + MODELS.size                // LLM rows come first
-            val existing = (0 until well.childCount).map { well.getChildAt(it) }.firstOrNull { it.tag == code }
-            if (existing == null) {
-                well.addView(modelRow(code, state), index)
-            } else if (lastRows[code] != state) {
-                val at = well.indexOfChild(existing)
-                val transition = well.layoutTransition
-                well.layoutTransition = null                  // state change: swap without the row animation
-                well.removeViewAt(at)
-                val row = modelRow(code, state)
-                well.addView(row, at)
-                well.layoutTransition = transition
-                if (lastRows[code] == ModelState.DOWNLOADING && state == ModelState.DONE) sparkle(row)
-            }
-        }
-        lastRows = next
-    }
-
     private enum class LlmState { IDLE, DOWNLOADING, WAITING_WIFI, DONE }
 
-    /** Tag of an LLM row in the well (never equal to an ML Kit code tag). */
+    /** Tag of an LLM row in the well. */
     private data class LlmTag(val key: String)
 
     /** Last rendered (state, active) per model key; sub label per key for in-place progress updates. */
@@ -426,7 +385,7 @@ class SettingsActivity : AppCompatActivity() {
         lastOcr = state
     }
 
-    /** Keeps one row per LLM at the top of the well in sync with Llm and the active choice (same swap / sparkle as the ML Kit rows). */
+    /** Keeps one row per LLM at the top of the well in sync with Llm and the active choice. */
     private fun renderLlms() {
         val active = Prefs.activeModel(this)
         val well = b.modelWell
@@ -506,66 +465,6 @@ class SettingsActivity : AppCompatActivity() {
         return row
     }
 
-    /** prism-tide .mrow: 60dp, disc 38dp, title + small name, status line, right-side action / state. */
-    private fun modelRow(code: String, state: ModelState): View {
-        val waiting = state == ModelState.WAITING_WIFI
-        val row = LinearLayout(this).apply {
-            tag = code
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPaddingRelative(px(10f), 0, px(4f), 0)
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(60f))
-        }
-        row.addView(disc(code, 14f, waiting), LinearLayout.LayoutParams(px(38f), px(38f)))
-        val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val titleRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = true }
-        titleRow.addView(label(Languages.modelTitle(code), 15f, true, if (waiting) GREY else INK))
-        titleRow.addView(label(Languages.modelSub(code), 12f, true, if (waiting) GREY else SECONDARY).apply { setPaddingRelative(px(6f), 0, 0, 0) })
-        texts.addView(titleRow)
-        val sub = when (state) {
-            ModelState.BUILTIN -> R.string.model_builtin_sub
-            ModelState.DONE -> R.string.model_done_sub
-            ModelState.DOWNLOADING -> R.string.chip_downloading
-            ModelState.WAITING_WIFI -> R.string.chip_waiting_wifi
-        }
-        val subColor = when (state) { ModelState.DOWNLOADING -> VIOLET; ModelState.WAITING_WIFI -> GREY; else -> SECONDARY }
-        texts.addView(label(getString(sub), 12.5f, state == ModelState.DOWNLOADING, subColor))
-        row.addView(texts, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = px(12f) })
-        row.addView(modelAction(code, state))
-        if (waiting) {                                       // tap a waiting row to retry (download() re-checks the network)
-            row.setOnClickListener { Translate.download(this, code); refreshModels() }
-        }
-        return row
-    }
-
-    /** Right side of a model row: 內建 badge, trash (deletes at once, final pick), spinner, or wifi icon. */
-    private fun modelAction(code: String, state: ModelState): View = when (state) {
-        ModelState.BUILTIN -> label(getString(R.string.model_builtin), 12f, true, SECONDARY).apply {
-            setPadding(px(10f), px(4f), px(10f), px(4f))
-            background = round(withAlpha(0.10f, 0x7C3AED), -1f)
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-                .apply { marginEnd = px(8f) }
-        }
-        ModelState.DONE -> FrameLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(px(44f), px(44f))
-            background = pressed(oval(withAlpha(0.16f, 0xF472B6)), null)
-            contentDescription = getString(R.string.model_delete, Languages.modelTitle(code))
-            isClickable = true
-            isFocusable = true
-            addView(ImageView(context).apply { setImageResource(R.drawable.ic_trash) }, FrameLayout.LayoutParams(px(20f), px(20f), Gravity.CENTER))
-            setOnClickListener { Translate.delete(code) { if (!isDestroyed) refreshModels() } }
-        }
-        ModelState.DOWNLOADING -> FrameLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(px(44f), px(44f))
-            addView(SpinnerRingView(context).apply { strokePx = 3 * d }, FrameLayout.LayoutParams(px(22f), px(22f), Gravity.CENTER))
-        }
-        ModelState.WAITING_WIFI -> FrameLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(px(44f), px(44f))
-            addView(ImageView(context).apply { setImageResource(R.drawable.ic_chip_wifi); setColorFilter(GREY) },
-                FrameLayout.LayoutParams(px(20f), px(20f), Gravity.CENTER))
-        }
-    }
-
     /** Language disc: 135° gradient of Languages.discColors with a white glyph; grey when waiting for Wi-Fi. */
     private fun disc(code: String, textSp: Float, grey: Boolean): TextView = TextView(this).apply {
         text = Languages.glyph(code)
@@ -609,8 +508,8 @@ class SettingsActivity : AppCompatActivity() {
     /** sheetIn 300 (decelerate) + scrim fade; at most 74 % of the screen (prism-tide .sheet max-height). */
     private fun openSheet(mode: SheetMode) {
         sheetMode = mode
-        b.sheetTitle.setText(if (mode == SheetMode.TARGET) R.string.tr_target else R.string.tr_predownload)
-        b.sheetSub.setText(if (mode == SheetMode.TARGET) R.string.sheet_target_sub else R.string.sheet_dl_sub)
+        b.sheetTitle.setText(R.string.tr_target)
+        b.sheetSub.setText(R.string.sheet_target_sub)
         fillSheet()
         (b.sheet.layoutParams as FrameLayout.LayoutParams).topMargin = (b.root.height * (1f - SHEET_MAX)).roundToInt()
         b.sheet.requestLayout()
@@ -637,35 +536,26 @@ class SettingsActivity : AppCompatActivity() {
     private fun fillSheet() {
         val list = b.sheetList
         list.removeAllViews()
-        val langs = Translate.languages()
-        if (sheetMode == SheetMode.TARGET) {
-            val current = Prefs.target(this).key
-            for (key in TargetLang.keys(langs)) {
-                val selected = key == current
-                list.addView(sheetRow(Languages.targetTitle(key), Languages.targetSub(key), TargetLang.of(key).mlkit, radio(selected), selected, true) { pickTarget(key) })
-            }
-        } else {
-            for (code in TargetLang.modelKeys(langs)) {
-                val state = lastRows[code]
-                list.addView(sheetRow(Languages.modelTitle(code), Languages.modelSub(code), code, state?.let { stateLabel(it) }, false, state == null || state == ModelState.WAITING_WIFI) { pickDownload(code) })   // waiting rows stay pickable: download() re-checks the network
-            }
+        val current = Prefs.target(this).key
+        for (key in TargetLang.keys) {
+            val selected = key == current
+            list.addView(sheetRow(Languages.targetTitle(key), Languages.targetSub(key), TargetLang.of(key).code, radio(selected), selected) { pickTarget(key) })
         }
     }
 
     /** prism-tide .lrow: 58dp, radius 18dp, disc 34dp, title 15.5sp bold + sub 12.5sp, right-side view. */
-    private fun sheetRow(title: String, sub: String, discCode: String, right: View?, selected: Boolean, enabled: Boolean, onPick: () -> Unit): View {
+    private fun sheetRow(title: String, sub: String, discCode: String, right: View?, selected: Boolean, onPick: () -> Unit): View {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPaddingRelative(px(12f), 0, px(14f), 0)
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(58f))
             background = if (selected) round(withAlpha(0.07f, 0x7C3AED), 18 * d) else pressed(round(withAlpha(0.08f, 0x7C3AED), 18 * d), null)
-            isEnabled = enabled
-            if (enabled) setOnClickListener { onPick() }
+            setOnClickListener { onPick() }
         }
         row.addView(disc(discCode, 13f, false), LinearLayout.LayoutParams(px(34f), px(34f)))
         val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        texts.addView(label(title, 15.5f, true, if (enabled) INK else GREY))
+        texts.addView(label(title, 15.5f, true, INK))
         texts.addView(label(sub, 12.5f, false, SECONDARY))
         row.addView(texts, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = px(12f) })
         right?.let { row.addView(it) }
@@ -683,37 +573,11 @@ class SettingsActivity : AppCompatActivity() {
         ).apply { setLayerInset(1, px(7f), px(7f), px(7f), px(7f)) }
     }
 
-    /** Disabled download-sheet row state: 內建 / ✓ 已下載 / spinner 下載中 / 等待 Wi-Fi (12.5sp bold #6B5FA8). */
-    private fun stateLabel(state: ModelState): View = LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL
-        gravity = Gravity.CENTER_VERTICAL
-        when (state) {
-            ModelState.DONE -> addView(ImageView(context).apply { setImageResource(R.drawable.ic_check) }, LinearLayout.LayoutParams(px(16f), px(16f)))
-            ModelState.DOWNLOADING -> addView(SpinnerRingView(context).apply { strokePx = 2.5f * d }, LinearLayout.LayoutParams(px(16f), px(16f)))
-            else -> Unit
-        }
-        val text = when (state) {
-            ModelState.BUILTIN -> R.string.model_builtin
-            ModelState.DONE -> R.string.sheet_done
-            ModelState.DOWNLOADING -> R.string.sheet_downloading
-            ModelState.WAITING_WIFI -> R.string.chip_waiting_wifi
-        }
-        addView(label(getString(text), 12.5f, true, SECONDARY).apply { setPaddingRelative(if (childCount > 0) px(6f) else 0, 0, 0, 0) })
-    }
-
     private fun pickTarget(key: String) {
         Prefs.setTarget(this, key)
         applyTarget(key)
         fillSheet()                                           // move the radio before the sheet leaves
         main.postDelayed({ closeSheet() }, PICK_HOLD)
-    }
-
-    private fun pickDownload(code: String) {
-        closeSheet()
-        main.postDelayed({
-            Translate.download(this, code)
-            refreshModels()
-        }, SHEET_OUT)
     }
 
     // ---- small drawables ----

@@ -12,7 +12,7 @@ internal data class VerticalLayout(val textPx: Float, val columns: List<String>,
 internal const val VCOL_PITCH = 1.2f
 
 /** Vertical drawing only for Chinese / Japanese / Korean targets. */
-internal fun verticalTarget(t: TargetLang): Boolean = t.mlkit == "zh" || t.mlkit == "ja" || t.mlkit == "ko"
+internal fun verticalTarget(t: TargetLang): Boolean = t.code == "zh" || t.code == "ja" || t.code == "ko"
 
 private const val VERTICAL_MARK = '︙'
 

@@ -4,7 +4,7 @@ Vendor-independent on-screen text extraction for Android. A floating bubble
 captures the current screen via MediaProjection and runs on-device OCR
 (Google ML Kit) — no root, no system UID, no vendor framework. Works on any
 Android 8+ device.
-Recognised paragraphs can also be translated on device (Google ML Kit translation + OpenCC).
+Recognised paragraphs can also be translated on device (LiteRT-LM LLMs + OpenCC).
 
 ## How it works
 1. Launching Textify opens `MainActivity`, which only routes: if the bubble is already
@@ -32,7 +32,7 @@ Recognised paragraphs can also be translated on device (Google ML Kit translatio
 Multi-select, at least one: Chinese (Traditional and Simplified), Japanese, Korean —
 chosen in Settings. Every model also reads Latin/English. All selected models run in
 parallel on the same screenshot; where two paragraphs overlap (IoU > 0.5) the higher-confidence
-one is kept (`OcrMerge.kt`). OCR runs fully offline; translation runs offline after a one-time model download (see Translation). See `Ocr.kt`.
+one is kept (`OcrMerge.kt`). OCR runs fully offline; translation runs offline after a one-time LLM download (see Translation). See `Ocr.kt`.
 `// ponytail:` ML Kit picks its own compute backend (CPU/GPU via NNAPI); it
 exposes no NPU/int4 control. Upgrade path if speed matters: swap in a
 LiteRT int4 model with a hardware delegate.
@@ -52,12 +52,12 @@ backend (plus OpenCC for 繁體中文). Settings lists two LLMs — Hy-MT2-1.8B 
 Gemma 4 E2B (~2.59 GB) — each downloadable
 and deletable; tapping one makes it the active translator. Only the active model translates and only
 one engine is loaded at a time. Every model file is pinned to a Hugging Face revision and exact size.
-Per paragraph, translation falls back to ML Kit when the active model is not downloaded yet, does not
-cover the language pair, its GPU engine fails to start, or inference fails.
-The active LLM and the ML Kit fallback language models (~30 MB each) download automatically on first
-use, optionally only on Wi-Fi; Settings lists, pre-downloads and deletes them (LLM rows on top).
+There is no other translation engine: if the active model is not downloaded yet, its download starts (optionally only
+on Wi-Fi) and the paragraphs show Downloading or Waiting for Wi-Fi until the next press translates; a pair the active
+model does not cover shows Unsupported; a GPU start or inference failure shows Failed. Settings lists the two LLM rows
+(download, delete, pick the active one) next to the manga-ocr row.
 Rules: `TranslateRules.kt`, `HyMtRules.kt` (Hy-MT2), `ChatRules.kt` (Gemma); model specs:
-`LlmModels.kt`; engines: `Llm.kt` (one LiteRT-LM engine for every spec), `Translate.kt` (routing + ML Kit).
+`LlmModels.kt`; engines: `Llm.kt` (one LiteRT-LM engine for every spec), `Translate.kt` (language-id, routing, OpenCC).
 
 ## Build
 Needs JDK 17 or 21 (not 25), Android SDK with platform 36.
@@ -69,6 +69,6 @@ python3 scripts/build_release.py   # signed release APK
 `local.properties` must point `sdk.dir` at your Android SDK.
 
 ## Stack
-AGP 8.13.2, Gradle 8.14.6, Kotlin 2.3.21, LiteRT-LM litertlm-android 0.18.0 (Hy-MT2, Gemma 4 E2B; needs Kotlin >= 2.3), ML Kit text-recognition 16.0.1, ML Kit translate 17.0.3, language-id 17.0.6, opencc4j 1.14.0, onnxruntime-android (manga-ocr; version in `app/build.gradle.kts`).
+AGP 8.13.2, Gradle 8.14.6, Kotlin 2.3.21, LiteRT-LM litertlm-android 0.18.0 (Hy-MT2, Gemma 4 E2B; needs Kotlin >= 2.3), ML Kit text-recognition 16.0.1, language-id 17.0.6, opencc4j 1.14.0, onnxruntime-android (manga-ocr; version in `app/build.gradle.kts`).
 AGP 9.x + latest androidx were tried but 9.x's built-in Kotlin plugin conflicts
 with the standard kotlin-android plugin; pinned to the proven 8.13 line.

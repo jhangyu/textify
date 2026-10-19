@@ -12,36 +12,57 @@ class TranslateRulesTest {
     private val hans = TargetLang.of(TargetLang.ZH_HANS)
     private val en = TargetLang.of("en")
 
+    private fun spec(key: String, supports: (String) -> Boolean = { true }) = ModelSpec(
+        key, key, "", "", PinnedFile("repo", "f.litertlm", "rev", 1L), Sampler(1, 1.0, 1.0), emptyMap(), { _, _ -> "" }, { it }, supports,
+    )
+
+    private val a = spec("a")
+    private val ready = setOf("a")
+
     @Test
     fun undeterminedIsNotNeeded() {
-        assertEquals(Route.NotNeeded, route(UNDETERMINED, null, hant))
+        assertEquals(Route.NotNeeded, route(UNDETERMINED, hant, a, ready))
     }
 
     @Test
-    fun unsupportedSource() {
-        assertEquals(Route.Unsupported, route("la", null, hant))
+    fun romanizedTagsAreUndetermined() {
+        assertEquals(Route.NotNeeded, route("ja-Latn", hant, a, ready))
+        assertEquals(Route.NotNeeded, route("zh-Latn", hant, a, ready))
     }
 
     @Test
     fun chineseToTraditionalIsOpenCcOnly() {
-        assertEquals(Route.OpenCcOnly, route("zh", "zh", hant))
+        assertEquals(Route.OpenCcOnly, route("zh", hant, a, emptySet()))   // needs no model
     }
 
     @Test
     fun chineseToSimplifiedIsNotNeeded() {
-        assertEquals(Route.NotNeeded, route("zh", "zh", hans))
+        assertEquals(Route.NotNeeded, route("zh", hans, a, ready))
     }
 
     @Test
     fun sameLanguageIsNotNeeded() {
-        assertEquals(Route.NotNeeded, route("ja", "ja", TargetLang.of("ja")))
+        assertEquals(Route.NotNeeded, route("ja", TargetLang.of("ja"), a, ready))
     }
 
     @Test
-    fun otherSourceUsesMlKitWithOpenCcForTraditional() {
-        assertEquals(Route.MlKit("en", true), route("en", "en", hant))
-        assertEquals(Route.MlKit("en", false), route("en", "en", hans))
-        assertEquals(Route.MlKit("ja", false), route("ja", "ja", en))
+    fun supportedPairWithModelDownloadedUsesLlm() {
+        assertEquals(Route.Llm("en"), route("en", hant, a, ready))
+        assertEquals(Route.Llm("ja"), route("ja", en, a, ready))
+    }
+
+    @Test
+    fun modelMissingNeedsDownload() {
+        assertEquals(Route.NeedsModel, route("ja", hant, a, emptySet()))
+        assertEquals(Route.NeedsModel, route("ja", hant, a, setOf("b")))   // another model on disk does not count
+    }
+
+    @Test
+    fun unsupportedPairIsUnsupportedEvenWithoutModel() {
+        val noJa = spec("a") { it != "ja" }
+        assertEquals(Route.Unsupported, route("ja", en, noJa, ready))
+        assertEquals(Route.Unsupported, route("ja", en, noJa, emptySet()))
+        assertEquals(Route.Unsupported, route("en", TargetLang.of("fr"), spec("a") { it != "fr" }, ready))
     }
 
     @Test
@@ -61,10 +82,25 @@ class TranslateRulesTest {
     }
 
     @Test
-    fun targetKeysOrder() {
-        val ml = listOf("zh", "ko", "fr", "en", "af", "ja")
-        assertEquals(listOf("zh-Hant", "zh-Hans", "en", "ja", "ko", "af", "fr"), TargetLang.keys(ml))
-        assertEquals(listOf("zh", "en", "ja", "ko", "af", "fr"), TargetLang.modelKeys(ml))
+    fun targetKeysCoverStoredKeysAndAreUnique() {
+        val keys = TargetLang.keys
+        assertEquals(listOf("zh-Hant", "zh-Hans", "en", "ja", "ko"), keys.take(5))
+        assertEquals(keys.size, keys.toSet().size)
+        assertEquals(keys.drop(5), keys.drop(5).sorted())
+        // TranslateLanguage.getAllLanguages() of translate-17.0.3 (59 codes), zh split into zh-Hant / zh-Hans
+        val offered = ("af ar be bg bn ca cs cy da de el en eo es et fa fi fr ga gl gu he hi hr ht hu id is it ja ka kn ko lt lv mk mr ms mt " +
+            "nl no pl pt ro ru sk sl sq sv sw ta te th tl tr uk ur vi zh").split(' ')
+        assertEquals(59, offered.size)
+        assertEquals((offered - "zh" + listOf("zh-Hant", "zh-Hans")).toSet(), keys.toSet())
+    }
+
+    @Test
+    fun legacyLanguageIdTagsAreNormalized() {
+        val hy = spec("a") { it in setOf("he", "id", "no", "en") }   // knows the modern codes only
+        assertEquals(Route.Llm("he"), route("iw", en, hy, ready))
+        assertEquals(Route.Llm("id"), route("in", en, hy, ready))
+        assertEquals(Route.Llm("no"), route("nb", en, hy, ready))
+        assertEquals(Route.NotNeeded, route("iw", TargetLang.of("he"), hy, ready))
     }
 
     @Test
@@ -73,6 +109,7 @@ class TranslateRulesTest {
         assertEquals(TargetLang("zh-Hans", "zh", false), TargetLang.of("zh-Hans"))
         assertEquals(TargetLang("fr", "fr", false), TargetLang.of("fr"))
         assertEquals("zh-Hant", TargetLang.DEFAULT)
+        assertTrue(TargetLang.DEFAULT in TargetLang.keys)   // Prefs falls back to it for an unknown key
     }
 
     @Test
@@ -89,66 +126,9 @@ class TranslateRulesTest {
         assertTrue(needsRun(null))
         assertTrue(needsRun(ParagraphState.WaitingWifi))
         assertTrue(needsRun(ParagraphState.Failed))
-        assertFalse(needsRun(ParagraphState.Downloading))
+        assertTrue(needsRun(ParagraphState.Downloading))   // the next press translates once the model is there
+        assertFalse(needsRun(ParagraphState.Translating))
         assertFalse(needsRun(ParagraphState.NotNeeded))
         assertFalse(needsRun(ParagraphState.Done("x", "en")))
-    }
-
-    @Test
-    fun modelRowsBuiltinFirstAndPriority() {
-        val rows = modelRows(downloaded = setOf("en", "zh", "ja"), downloading = setOf("ko", "ja"), waiting = setOf("fr", "zh"))
-        assertEquals(
-            listOf(
-                "en" to ModelState.BUILTIN,
-                "fr" to ModelState.WAITING_WIFI,
-                "ja" to ModelState.DOWNLOADING,
-                "ko" to ModelState.DOWNLOADING,
-                "zh" to ModelState.DONE,
-            ),
-            rows,
-        )
-        assertEquals(listOf("en" to ModelState.BUILTIN), modelRows(emptySet(), emptySet(), emptySet()))
-    }
-
-    @Test
-    fun romanizedTagsAreUndetermined() {
-        assertEquals(Route.NotNeeded, route("ja-Latn", null, hant))
-        assertEquals(Route.NotNeeded, route("zh-Latn", "zh", hant))
-    }
-
-    private fun spec(key: String, supports: (String) -> Boolean = { true }) = ModelSpec(
-        key, key, "", "", PinnedFile("repo", "f.litertlm", "rev", 1L), Sampler(1, 1.0, 1.0), emptyMap(), { _, _ -> "" }, { it }, supports,
-    )
-
-    private val a = spec("a")
-
-    @Test
-    fun engineForReadyAndSupportedIsLlm() {
-        assertEquals(Engine.LLM, engineFor("ja", hant, a, setOf("a"), emptySet()))
-    }
-
-    @Test
-    fun engineForActiveNotDownloadedIsMlKit() {
-        assertEquals(Engine.MLKIT, engineFor("ja", hant, a, setOf("b"), emptySet()))   // another model on disk does not count
-    }
-
-    @Test
-    fun engineForActiveGpuFailedIsMlKit() {
-        assertEquals(Engine.MLKIT, engineFor("ja", hant, a, setOf("a"), setOf("a")))
-    }
-
-    @Test
-    fun engineForOtherModelGpuFailedIsLlm() {
-        assertEquals(Engine.LLM, engineFor("ja", hant, a, setOf("a", "b"), setOf("b")))   // gpuFailed is per model
-    }
-
-    @Test
-    fun engineForUnsupportedSourceIsMlKit() {
-        assertEquals(Engine.MLKIT, engineFor("ja", en, spec("a") { it != "ja" }, setOf("a"), emptySet()))
-    }
-
-    @Test
-    fun engineForUnsupportedTargetIsMlKit() {
-        assertEquals(Engine.MLKIT, engineFor("ja", en, spec("a") { it != "en" }, setOf("a"), emptySet()))
     }
 }
