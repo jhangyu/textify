@@ -33,7 +33,7 @@ data class TargetLang(val key: String, val code: String, val openCc: Boolean) {
         }
 
         private val OTHERS = (
-            "af ar be bg bn ca cs cy da de el eo es et fa fi fr ga gl gu he hi hr hu id is it ka kn lt lv mk mr ms mt nl no pl pt " +
+            "af ar be bg bn ca cs cy da de el eo es et fa fi fr ga gl gu he hi hr ht hu id is it ka kn lt lv mk mr ms mt nl no pl pt " +
                 "ro ru sk sl sq sv sw ta te th tl tr uk ur vi"
             ).split(' ')
 
@@ -57,17 +57,23 @@ sealed class Route {
 const val UNDETERMINED = "und"
 
 /**
- * [detected] = language-id tag ("und" when undetermined or identification failed, romanized tags such as "ja-Latn"
+ * [tag] = language-id tag ("und" when undetermined or identification failed, romanized tags such as "ja-Latn"
  * are treated as undetermined). [active] translates only when it supports both languages; [downloaded] = model keys.
  * A GPU start failure surfaces as a failed translation, not as another route: there is no fallback engine.
  */
-internal fun route(detected: String, target: TargetLang, active: ModelSpec, downloaded: Set<String>): Route = when {
-    detected == UNDETERMINED || detected.endsWith("-Latn") -> Route.NotNeeded
-    detected == target.code -> if (target.openCc) Route.OpenCcOnly else Route.NotNeeded
-    !active.supports(detected) || !active.supports(target.code) -> Route.Unsupported
-    active.key !in downloaded -> Route.NeedsModel
-    else -> Route.Llm(detected)
+internal fun route(tag: String, target: TargetLang, active: ModelSpec, downloaded: Set<String>): Route {
+    val detected = LANGUAGE_ALIASES[tag] ?: tag
+    return when {
+        detected == UNDETERMINED || detected.endsWith("-Latn") -> Route.NotNeeded
+        detected == target.code -> if (target.openCc) Route.OpenCcOnly else Route.NotNeeded
+        !active.supports(detected) || !active.supports(target.code) -> Route.Unsupported
+        active.key !in downloaded -> Route.NeedsModel
+        else -> Route.Llm(detected)
+    }
 }
+
+/** Legacy language-id tags -> the codes used everywhere else (the aliases ML Kit's TranslateLanguage.fromLanguageTag applied). */
+private val LANGUAGE_ALIASES = mapOf("iw" to "he", "in" to "id", "nb" to "no")
 
 /** Final pick: an OpenCC-only paragraph whose conversion changes nothing keeps the original look. */
 internal fun openCcOnlyResult(original: String, converted: String): ParagraphState =

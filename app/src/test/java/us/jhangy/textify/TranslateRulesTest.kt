@@ -85,10 +85,22 @@ class TranslateRulesTest {
     fun targetKeysCoverStoredKeysAndAreUnique() {
         val keys = TargetLang.keys
         assertEquals(listOf("zh-Hant", "zh-Hans", "en", "ja", "ko"), keys.take(5))
-        assertEquals(59, keys.size)   // the 58 codes ML Kit translation offered, zh split in two targets
         assertEquals(keys.size, keys.toSet().size)
         assertEquals(keys.drop(5), keys.drop(5).sorted())
-        assertTrue("fr" in keys && "he" in keys && "zh" !in keys)
+        // TranslateLanguage.getAllLanguages() of translate-17.0.3 (59 codes), zh split into zh-Hant / zh-Hans
+        val offered = ("af ar be bg bn ca cs cy da de el en eo es et fa fi fr ga gl gu he hi hr ht hu id is it ja ka kn ko lt lv mk mr ms mt " +
+            "nl no pl pt ro ru sk sl sq sv sw ta te th tl tr uk ur vi zh").split(' ')
+        assertEquals(59, offered.size)
+        assertEquals((offered - "zh" + listOf("zh-Hant", "zh-Hans")).toSet(), keys.toSet())
+    }
+
+    @Test
+    fun legacyLanguageIdTagsAreNormalized() {
+        val hy = spec("a") { it in setOf("he", "id", "no", "en") }   // knows the modern codes only
+        assertEquals(Route.Llm("he"), route("iw", en, hy, ready))
+        assertEquals(Route.Llm("id"), route("in", en, hy, ready))
+        assertEquals(Route.Llm("no"), route("nb", en, hy, ready))
+        assertEquals(Route.NotNeeded, route("iw", TargetLang.of("he"), hy, ready))
     }
 
     @Test
