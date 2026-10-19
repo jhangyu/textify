@@ -97,6 +97,8 @@ class SettingsActivity : AppCompatActivity() {
         main.postDelayed(recheck, RECHECK)
         Translate.onModelsChanged = { refreshModels() }   // a session download may finish while Settings is open
         Llm.onChanged = { onLlmChanged() }
+        Downloads.onChanged = { onLlmChanged() }
+        renderOcr()
         refreshModels()                                    // spec §4: query ML Kit every time Settings opens
         b.trPreview.resume()
     }
@@ -106,6 +108,7 @@ class SettingsActivity : AppCompatActivity() {
         b.demo.pause()
         Translate.onModelsChanged = null
         Llm.onChanged = null
+        Downloads.onChanged = null
         b.trPreview.pause()
         super.onPause()
     }
@@ -291,6 +294,7 @@ class SettingsActivity : AppCompatActivity() {
             if (!wifiOnly) {                                  // Wi-Fi-only off: retry what waited for Wi-Fi
                 Translate.waitingWifi.forEach { Translate.download(this, it) }
                 MODELS.forEach { if (Llm.waitingWifi(it)) Llm.download(this, it) }
+                if (Downloads.waitingWifi(MANGA_OCR.all)) Downloads.download(this, MANGA_OCR.all)
                 refreshModels()
             }
         }
@@ -381,8 +385,45 @@ class SettingsActivity : AppCompatActivity() {
     /** Llm state or progress changed: re-render rows whose state changed, else only update the % text. */
     private fun onLlmChanged() {
         renderLlms()
+        renderOcr()
         val active = Prefs.activeModel(this)
         for (m in MODELS) if (llmState(m) == LlmState.DOWNLOADING) llmSub[m.key]?.text = llmSubText(m, LlmState.DOWNLOADING, m == active)
+        if (ocrState() == LlmState.DOWNLOADING) ocrSub?.text = ocrSubText(LlmState.DOWNLOADING)
+    }
+
+    private val ocrFiles = MANGA_OCR.all
+    private var lastOcr: LlmState? = null
+    private var ocrSub: TextView? = null
+
+    private fun ocrState() = when {
+        Downloads.isDownloaded(this, ocrFiles) -> LlmState.DONE
+        Downloads.downloading(ocrFiles) -> LlmState.DOWNLOADING
+        Downloads.waitingWifi(ocrFiles) -> LlmState.WAITING_WIFI
+        else -> LlmState.IDLE
+    }
+
+    private fun ocrSubText(state: LlmState) = when (state) {
+        LlmState.IDLE -> getString(R.string.ocr_model_size, (ocrFiles.sumOf { it.size } / 1_000_000).toInt())
+        LlmState.DOWNLOADING -> getString(R.string.llm_downloading, (Downloads.progress(ocrFiles) * 100).toInt())
+        LlmState.WAITING_WIFI -> getString(R.string.chip_waiting_wifi)
+        LlmState.DONE -> getString(R.string.llm_done)
+    }
+
+    /** The manga-ocr row under the OCR language card: swaps only when its state changes. */
+    private fun renderOcr() {
+        val state = ocrState()
+        if (state == lastOcr) return
+        val host = b.ocrModelHost
+        val row = downloadRow(
+            tag = "ocr", glyph = "漫", title = getString(R.string.ocr_model_title), badge = getString(R.string.ocr_model_badge),
+            state = state, active = false, sub = ocrSubText(state), deleteDesc = getString(R.string.model_delete, getString(R.string.ocr_model_title)),
+            onSub = { ocrSub = it }, onClick = { Downloads.download(this, ocrFiles); renderOcr() },
+            onDelete = { Downloads.delete(this, ocrFiles); renderOcr() },
+        )
+        host.removeAllViews()
+        host.addView(row)
+        if (lastOcr == LlmState.DOWNLOADING && state == LlmState.DONE) sparkle(row)
+        lastOcr = state
     }
 
     /** Keeps one row per LLM at the top of the well in sync with Llm and the active choice (same swap / sparkle as the ML Kit rows). */
@@ -414,35 +455,45 @@ class SettingsActivity : AppCompatActivity() {
         renderLlms()
     }
 
-    private fun llmRow(m: ModelSpec, state: LlmState, active: Boolean): View {
+    private fun llmRow(m: ModelSpec, state: LlmState, active: Boolean): View = downloadRow(
+        tag = LlmTag(m.key), glyph = m.glyph, title = m.title, badge = m.badge, state = state, active = active,
+        sub = llmSubText(m, state, active), deleteDesc = getString(R.string.model_delete, m.title),
+        onSub = { llmSub[m.key] = it }, onClick = { pickLlm(m) }, onDelete = { Llm.delete(this, m); renderLlms() },
+    )
+
+    /** One downloadable-model row (LLMs and the manga-ocr model): disc, title + badge, status line, right-side action. */
+    private fun downloadRow(
+        tag: Any, glyph: String, title: String, badge: String, state: LlmState, active: Boolean, sub: String, deleteDesc: String,
+        onSub: (TextView) -> Unit, onClick: () -> Unit, onDelete: () -> Unit,
+    ): View {
         val grey = state == LlmState.WAITING_WIFI
         val row = LinearLayout(this).apply {
-            tag = LlmTag(m.key)
+            this.tag = tag
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPaddingRelative(px(10f), 0, px(4f), 0)
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(60f))
             if (active) background = round(withAlpha(0.10f, 0x7C3AED), 14 * d)
         }
-        row.addView(disc(m.glyph, 14f, grey), LinearLayout.LayoutParams(px(38f), px(38f)))
+        row.addView(disc(glyph, 14f, grey), LinearLayout.LayoutParams(px(38f), px(38f)))
         val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val titleRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = true }
-        titleRow.addView(label(m.title, 15f, true, if (grey) GREY else INK))
-        titleRow.addView(label(m.badge, 12f, true, if (grey) GREY else SECONDARY).apply { setPaddingRelative(px(6f), 0, 0, 0) })
+        titleRow.addView(label(title, 15f, true, if (grey) GREY else INK))
+        titleRow.addView(label(badge, 12f, true, if (grey) GREY else SECONDARY).apply { setPaddingRelative(px(6f), 0, 0, 0) })
         texts.addView(titleRow)
         val subColor = when { state == LlmState.DOWNLOADING || active -> VIOLET; grey -> GREY; else -> SECONDARY }
-        llmSub[m.key] = label(llmSubText(m, state, active), 12.5f, state == LlmState.DOWNLOADING || active, subColor).also { texts.addView(it) }
+        label(sub, 12.5f, state == LlmState.DOWNLOADING || active, subColor).also { texts.addView(it); onSub(it) }
         row.addView(texts, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = px(12f) })
         row.addView(FrameLayout(this).apply {
             layoutParams = LinearLayout.LayoutParams(px(44f), px(44f))
             when (state) {
                 LlmState.DONE -> {
                     background = pressed(oval(withAlpha(0.16f, 0xF472B6)), null)
-                    contentDescription = getString(R.string.model_delete, m.title)
+                    contentDescription = deleteDesc
                     isClickable = true
                     isFocusable = true
                     addView(ImageView(context).apply { setImageResource(R.drawable.ic_trash) }, FrameLayout.LayoutParams(px(20f), px(20f), Gravity.CENTER))
-                    setOnClickListener { Llm.delete(this@SettingsActivity, m); renderLlms() }
+                    setOnClickListener { onDelete() }
                 }
                 LlmState.DOWNLOADING -> addView(SpinnerRingView(context).apply { strokePx = 3 * d }, FrameLayout.LayoutParams(px(22f), px(22f), Gravity.CENTER))
                 LlmState.WAITING_WIFI -> addView(ImageView(context).apply { setImageResource(R.drawable.ic_chip_wifi); setColorFilter(GREY) },
@@ -451,7 +502,7 @@ class SettingsActivity : AppCompatActivity() {
                     FrameLayout.LayoutParams(px(20f), px(20f), Gravity.CENTER))
             }
         })
-        row.setOnClickListener { pickLlm(m) }
+        row.setOnClickListener { onClick() }
         return row
     }
 
