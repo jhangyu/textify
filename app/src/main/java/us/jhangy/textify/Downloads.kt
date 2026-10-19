@@ -13,11 +13,11 @@ import java.util.concurrent.ConcurrentHashMap
  * One file of a Hugging Face repo, pinned: [revision] + exact [size] mean a resumed download can never mix two versions
  * (any other size is rejected). Pure (no Android), so it runs on the JVM test runner.
  */
-class PinnedFile(val repo: String, val file: String, val revision: String, val size: Long) {
+class PinnedFile(val repo: String, val file: String, val revision: String, val size: Long, val dir: String = "") {
     val url: String get() = "https://huggingface.co/$repo/resolve/$revision/$file"
 
-    /** Path under the app files dir; one subdir per repo so equal file names of different repos never clash. */
-    val relPath: String get() = "$repo/$file"
+    /** Path under the app files dir: [file] itself (LLMs, as always) or [dir]/[file] (manga-ocr, its own subdir). */
+    val relPath: String get() = if (dir.isEmpty()) file else "$dir/$file"
 
     /** A fully downloaded file has exactly [size] bytes. */
     fun complete(length: Long): Boolean = length == size
@@ -28,11 +28,13 @@ class MangaOcrFiles(val encoder: PinnedFile, val decoder: PinnedFile, val vocab:
     val all: List<PinnedFile> get() = listOf(encoder, decoder, vocab)
 }
 
+private const val MANGA_DIR = "manga-ocr"
+
 /** Same files as the desktop bench (scripts/tmp/ocrbench/hybrid/run.py). Both repos are apache-2.0. */
 val MANGA_OCR = MangaOcrFiles(
-    encoder = PinnedFile("onnx-community/manga-ocr-base-ONNX", "onnx/encoder_model_int8.onnx", "f9023406bb2f6b17df67bc4a327c56ecd20611f0", 86_967_767L),
-    decoder = PinnedFile("onnx-community/manga-ocr-base-ONNX", "onnx/decoder_model_int8.onnx", "f9023406bb2f6b17df67bc4a327c56ecd20611f0", 29_627_936L),
-    vocab = PinnedFile("kha-white/manga-ocr-base", "vocab.txt", "aa6573bd10b0d446cbf622e29c3e084914df9741", 24_072L),
+    encoder = PinnedFile("onnx-community/manga-ocr-base-ONNX", "onnx/encoder_model_int8.onnx", "f9023406bb2f6b17df67bc4a327c56ecd20611f0", 86_967_767L, MANGA_DIR),
+    decoder = PinnedFile("onnx-community/manga-ocr-base-ONNX", "onnx/decoder_model_int8.onnx", "f9023406bb2f6b17df67bc4a327c56ecd20611f0", 29_627_936L, MANGA_DIR),
+    vocab = PinnedFile("kha-white/manga-ocr-base", "vocab.txt", "aa6573bd10b0d446cbf622e29c3e084914df9741", 24_072L, MANGA_DIR),
 )
 
 /**

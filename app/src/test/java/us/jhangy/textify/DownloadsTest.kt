@@ -33,6 +33,13 @@ class DownloadsTest {
     }
 
     @Test
+    fun storagePaths() {
+        for (m in MODELS) assertEquals(m.pinned.file, m.pinned.relPath)
+        assertEquals("manga-ocr/onnx/encoder_model_int8.onnx", MANGA_OCR.encoder.relPath)
+        assertEquals("manga-ocr/vocab.txt", MANGA_OCR.vocab.relPath)
+    }
+
+    @Test
     fun onlyTheExactSizeIsComplete() {
         for (f in MANGA_OCR.all + MODELS.map { it.pinned }) {
             assertTrue(f.complete(f.size))
