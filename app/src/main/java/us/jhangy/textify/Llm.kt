@@ -49,9 +49,11 @@ object Llm {
 
     /** Cancels any download of [m] and deletes its file (and partial file); closes the engine if it runs [m]. */
     fun delete(ctx: Context, m: ModelSpec) {
-        Downloads.delete(ctx, m.files)                    // bumps the generation first so a running download stops
+        val app = ctx.applicationContext
+        Downloads.cancel(m.files)                         // bumps the generation first so a running download stops
         worker.execute {                                  // on the worker, so the engine no longer maps the file
             if (engineKey == m.key) closeEngine()
+            Downloads.deleteFiles(app, m.files)
             changed()
         }
     }

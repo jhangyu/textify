@@ -164,11 +164,22 @@ object Downloads {
 
     /** Cancels any download of [files] and deletes them (and partial files). Caller closes any engine mapping them first. */
     fun delete(ctx: Context, files: List<PinnedFile>) {
+        cancel(files)
+        deleteFiles(ctx, files)
+    }
+
+    /** Stops any download of [files] (a running thread never publishes) and resets their state. */
+    fun cancel(files: List<PinnedFile>) {
         val s = slot(files)
         s.generation++
         s.downloading = false
         s.waitingWifi = false
         s.progress = 0f
+        changed()
+    }
+
+    /** Unlinks [files] and their partial files; any thread (Llm deletes on its worker after closing the engine). */
+    fun deleteFiles(ctx: Context, files: List<PinnedFile>) {
         files.forEach { file(ctx, it).delete(); part(ctx, it).delete() }
         changed()
     }
