@@ -82,5 +82,17 @@ dependencies {
     // No R8 keep rules: release builds are not minified (LiteRT-LM issue #3739 needs them once minify is on).
     implementation("com.google.ai.edge.litertlm:litertlm-android:0.18.0")
 
+    // manga-ocr re-read of Japanese bubbles (MangaOcr.kt). Maven Central latest 1.31.0, verified 2026-10-19; arm64 .so only (abiFilters).
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.31.0")
+
     testImplementation("junit:junit:4.13.2")
+    // JVM unit tests run the real model on the desktop build (same ai.onnxruntime API, desktop natives).
+    testImplementation("com.microsoft.onnxruntime:onnxruntime:1.31.0")
+}
+
+// The Android AAR has the same ai.onnxruntime classes but only Android natives: keep it off the unit-test classpaths.
+configurations.configureEach {
+    if (name.contains("UnitTest") && name.endsWith("Classpath")) {
+        exclude(group = "com.microsoft.onnxruntime", module = "onnxruntime-android")
+    }
 }

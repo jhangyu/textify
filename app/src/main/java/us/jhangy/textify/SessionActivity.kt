@@ -62,6 +62,7 @@ class SessionActivity : AppCompatActivity() {
     private var ended = false
     private val pendingShimmer = HashMap<PillView, Runnable>()   // tide-timed shimmer starts not yet fired
     private var ocrRunning = false
+    private var manga: MangaOcr? = null      // manga-ocr re-read of Japanese bubbles; null = model not downloaded
     private var actionMode: ActionMode? = null
 
     // translation (spec §3); every list is indexed by paragraph in display order (top, then left)
@@ -133,7 +134,10 @@ class SessionActivity : AppCompatActivity() {
         b.scrim.background = scrimDrawable()
         b.scrim.animate().alpha(1f).setStartDelay(SCRIM_DELAY).setDuration(SCRIM_IN).setInterpolator(Easing.EASE_OUT)
         ocrRunning = true
-        Ocr.recognize(this, bmp, Prefs.scripts(this)) { found -> runOnUiThread { onOcr(found) } }
+        if (Downloads.isDownloaded(this, MANGA_OCR.all)) {
+            manga = MangaOcr(Downloads.file(this, MANGA_OCR.encoder), Downloads.file(this, MANGA_OCR.decoder), Downloads.file(this, MANGA_OCR.vocab))
+        }
+        Ocr.recognize(this, bmp, Prefs.scripts(this), manga) { found -> runOnUiThread { onOcr(found) } }
     }
 
     private fun onOcr(found: List<OcrBlock>) {
@@ -143,6 +147,8 @@ class SessionActivity : AppCompatActivity() {
             shot = null
             return
         }
+        // manga-ocr contract decision 6: the first scan with a Japanese bubble fetches the model (Wi-Fi-only honoured)
+        if (manga == null && found.any { mangaTrigger(it.text, it.vertical) }) Downloads.download(this, MANGA_OCR.all)
         if (closing) return
         b.root.doOnLayout {
             b.scrim.animate().cancel()
@@ -215,12 +221,14 @@ class SessionActivity : AppCompatActivity() {
      * columns in a CJK grid) and re-translate that paragraph only (when translation is on; otherwise on the next run).
      * Adjacent small CJK paragraphs of the same bubble ([flipNeighbours]) are absorbed: their characters join the
      * regroup, their pills are hidden and their entries emptied (index stays, so every per-paragraph list keeps lining up).
+     * manga-ocr paragraphs have no characters: they never flip and are never absorbed.
      */
     private fun flip(i: Int) {
         if (closing) return
         val old = blocks[i]
         if (old.chars.isEmpty()) return
         val absorbed = flipNeighbours(i, blocks.map { it.box.toBox() }, blocks.map { it.text }, old.chars)
+            .filter { blocks[it].chars.isNotEmpty() }
         val chars = old.chars + absorbed.flatMap { blocks[it].chars }
         val (text, lines) = regroup(chars, !old.vertical)
         val box = Rect(old.box).apply { absorbed.forEach { union(blocks[it].box) } }
@@ -511,6 +519,8 @@ class SessionActivity : AppCompatActivity() {
         cancelShimmers()
         runs.forEach { it.close() }           // translation spec §2/§5: model downloads keep running
         runs.clear()
+        manga?.close()                        // after any running re-read; its result is then dropped by onOcr
+        manga = null
         CaptureService.onSessionEnded()
     }
 

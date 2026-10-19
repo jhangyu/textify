@@ -31,8 +31,10 @@ object Ocr {
     /**
      * Calls [onResult] exactly once on the main thread after every recognizer completed; overlapping paragraphs
      * are merged by [mergeOcr] (sorted top, then left). A failing recognizer contributes no paragraphs.
+     * With [manga], Japanese bubbles ([mangaCrops]) are re-read by manga-ocr on its thread first; a failed read keeps
+     * ML Kit's text. [bitmap] must stay alive until [onResult].
      */
-    fun recognize(ctx: Context, bitmap: Bitmap, scripts: Set<Script>, onResult: (List<OcrBlock>) -> Unit) {
+    fun recognize(ctx: Context, bitmap: Bitmap, scripts: Set<Script>, manga: MangaOcr?, onResult: (List<OcrBlock>) -> Unit) {
         val main = Handler(Looper.getMainLooper())
         val image = try {
             InputImage.fromBitmap(bitmap, 0)
@@ -46,8 +48,13 @@ object Ocr {
         fun done(i: Int, found: List<OcrCandidate>) = main.post {
             parts[i] = found
             if (--pending == 0) {
-                onResult(mergeOcr(parts.flatMap { it.orEmpty() })
-                    .map { c -> OcrBlock(c.text, c.box.toRect(), c.lines.map { it.toRect() }, c.vertical, c.chars) })
+                val merged = mergeOcr(parts.flatMap { it.orEmpty() })
+                val crops = if (manga == null) emptyList() else mangaCrops(merged, bitmap.width, bitmap.height)
+                val posted = crops.isNotEmpty() && manga!!.post {
+                    val read = applyMangaReads(merged, crops) { manga.read(bitmap, it) }
+                    main.post { onResult(blocks(read)) }
+                }
+                if (!posted) onResult(blocks(merged))
             }
         }
         scripts.forEachIndexed { i, script ->
@@ -62,6 +69,21 @@ object Ocr {
                 done(i, emptyList())
             }
         }
+    }
+
+    private fun blocks(found: List<OcrCandidate>) =
+        found.map { c -> OcrBlock(c.text, c.box.toRect(), c.lines.map { it.toRect() }, c.vertical, c.chars) }
+
+    /** manga-ocr text of [box] in [bitmap]; null = failed (also an empty box or a recycled bitmap). */
+    private fun MangaOcr.read(bitmap: Bitmap, box: Box): String? {
+        if (box.width <= 0 || box.height <= 0) return null
+        val px = IntArray(box.width * box.height)
+        try {
+            bitmap.getPixels(px, 0, box.width, box.left, box.top, box.width, box.height)
+        } catch (e: RuntimeException) {
+            return null
+        }
+        return read(px, box.width, box.height)
     }
 
     private fun client(script: Script): TextRecognizer = when (script) {
